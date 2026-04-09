@@ -1,0 +1,317 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:d4rt/d4rt.dart';
+import 'package:rhttp/rhttp.dart' as rhttp;
+import '../../../core/services/cookie_store.dart';
+import '../../../core/services/webview_service.dart';
+
+/// When true, HTTP bridge skips WebView operations (running in background isolate).
+bool isBackgroundIsolate = false;
+
+/// Bridges HTTP client for Dart extensions running in d4rt.
+/// Uses rhttp (Rust/reqwest) for Chrome-like TLS fingerprint.
+class HttpBridge {
+  static BridgedClass get bridgedClass {
+    return BridgedClass(
+      nativeType: _HttpClient,
+      name: 'Client',
+      constructors: {
+        '': (visitor, positionalArgs, namedArgs) {
+          return _HttpClient();
+        },
+      },
+      methods: {
+        'get': (visitor, instance, positionalArgs, namedArgs) async {
+          final client = instance as _HttpClient;
+          final url = positionalArgs[0] as String;
+          final headers =
+              (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
+          return await client.get(url, headers: headers);
+        },
+        'post': (visitor, instance, positionalArgs, namedArgs) async {
+          final client = instance as _HttpClient;
+          final url = positionalArgs[0] as String;
+          // Accept headers as positional[1] (if Map) or named
+          Map<String, String> headers = {};
+          dynamic body;
+          if (positionalArgs.length > 1 && positionalArgs[1] is Map) {
+            headers = (positionalArgs[1] as Map).cast<String, String>();
+            body = positionalArgs.length > 2 ? positionalArgs[2] : namedArgs['body'];
+          } else {
+            headers = (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
+            body = positionalArgs.length > 1 ? positionalArgs[1] : namedArgs['body'];
+          }
+          final result = await client.post(url, headers: headers, body: body);
+          debugPrint('[HTTP] POST $url → ${result.statusCode} (${result.body.length} bytes)');
+          return result;
+        },
+      },
+      getters: {},
+      setters: {},
+    );
+  }
+}
+
+class _HttpClient {
+  rhttp.RhttpClient? _client;
+
+  Future<rhttp.RhttpClient> _getClient() async {
+    if (_client != null) return _client!;
+    _client = await rhttp.RhttpClient.create(
+      settings: const rhttp.ClientSettings(
+        throwOnStatusCode: false,
+        tlsSettings: rhttp.TlsSettings(
+          verifyCertificates: false,
+        ),
+      ),
+    );
+    return _client!;
+  }
+
+  Future<Map<String, String>> _buildHeaders(
+      String url, Map<String, String> headers) async {
+    final merged = Map<String, String>.from(headers);
+    final cookieHeader = await CookieStore().getCookieHeader(url);
+    if (cookieHeader != null) {
+      merged['Cookie'] = cookieHeader;
+    }
+    final storedUA = await CookieStore().getUserAgent();
+    merged.putIfAbsent('User-Agent', () => storedUA);
+    return merged;
+  }
+
+  Future<_HttpResponse> get(String url,
+      {Map<String, String> headers = const {}}) async {
+    final mergedHeaders = await _buildHeaders(url, headers);
+    try {
+      final client = await _getClient();
+      final response = await client.requestText(
+        method: rhttp.HttpMethod.get,
+        url: url,
+        headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+      );
+      debugPrint('[HTTP] GET $url → ${response.statusCode} (${response.body.length} bytes)');
+      if (response.statusCode == 403) {
+        return await _handleCloudflare(url, headers, 'GET');
+      }
+      return _HttpResponse(
+        body: response.body,
+        statusCode: response.statusCode,
+        headers: response.headerMap,
+      );
+    } catch (e) {
+      // Fallback to Dart HttpClient on rhttp connection errors (DNS issues on Windows)
+      if (e.toString().contains('ConnectError') || e.toString().contains('dns error')) {
+        debugPrint('[HTTP] rhttp failed, falling back to Dart HttpClient for $url');
+        return await _dartGet(url, mergedHeaders);
+      }
+      debugPrint('[HTTP] GET error for $url: $e');
+      rethrow;
+    }
+  }
+
+  /// Fallback GET using Dart's built-in HttpClient (for when rhttp DNS fails)
+  Future<_HttpResponse> _dartGet(String url, Map<String, String> headers) async {
+    final httpClient = HttpClient();
+    httpClient.badCertificateCallback = (_, __, ___) => true;
+    try {
+      final request = await httpClient.getUrl(Uri.parse(url));
+      headers.forEach((k, v) => request.headers.set(k, v));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final headerMap = <String, String>{};
+      response.headers.forEach((name, values) => headerMap[name] = values.join(', '));
+      debugPrint('[HTTP] Dart GET $url → ${response.statusCode} (${body.length} bytes)');
+      if (response.statusCode == 403) {
+        return await _handleCloudflare(url, {}, 'GET');
+      }
+      return _HttpResponse(body: body, statusCode: response.statusCode, headers: headerMap);
+    } finally {
+      httpClient.close();
+    }
+  }
+
+  Future<_HttpResponse> post(String url,
+      {Map<String, String> headers = const {}, dynamic body}) async {
+    final mergedHeaders = await _buildHeaders(url, headers);
+    try {
+      final client = await _getClient();
+      final response = await client.requestText(
+        method: rhttp.HttpMethod.post,
+        url: url,
+        headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+        body: body is String ? rhttp.HttpBody.text(body) : null,
+      );
+      if (response.statusCode == 403) {
+        return await _handleCloudflare(url, headers, 'POST', body: body);
+      }
+      return _HttpResponse(
+        body: response.body,
+        statusCode: response.statusCode,
+        headers: response.headerMap,
+      );
+    } catch (e) {
+      debugPrint('[HTTP] POST error for $url: $e');
+      rethrow;
+    }
+  }
+
+  // Lock to prevent concurrent Cloudflare resolutions for the same domain
+  static final Map<String, Future<bool>> _cfLocks = {};
+
+  /// Handle Cloudflare 403: use cached cookies if fresh, otherwise resolve.
+  Future<_HttpResponse> _handleCloudflare(
+    String url,
+    Map<String, String> originalHeaders,
+    String method, {
+    dynamic body,
+  }) async {
+    // In background isolate, can't spawn WebView — just retry with cookies or throw
+    if (isBackgroundIsolate) {
+      debugPrint('[HTTP] 403 in isolate for $url — retrying with cached cookies only');
+      final mergedHeaders = await _buildHeaders(url, originalHeaders);
+      final client = await _getClient();
+      final response = await client.requestText(
+        method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+        url: url,
+        headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+        body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+      );
+      if (response.statusCode != 403) {
+        return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+      }
+      throw Exception('Cloudflare 403 in isolate — needs main thread WebView resolution');
+    }
+
+    final cookieStore = CookieStore();
+    final domain = Uri.parse(url).host;
+
+    // Step 1: If we have fresh cookies (resolved <30 min ago), retry with rhttp only
+    // Don't spawn WebView — just use the cached cookies
+    if (cookieStore.hasFreshCookies(url)) {
+      debugPrint('[HTTP] 403 for $url — retrying with fresh cached cookies (no WebView)');
+      final mergedHeaders = await _buildHeaders(url, originalHeaders);
+      try {
+        final client = await _getClient();
+        final response = await client.requestText(
+          method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+          url: url,
+          headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+          body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+        );
+        if (response.statusCode != 403) {
+          debugPrint('[HTTP] Cached cookie retry succeeded! Status: ${response.statusCode}');
+          return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+        }
+      } catch (e) {
+        debugPrint('[HTTP] Cached cookie retry failed: $e');
+      }
+      // Cookies are stale despite being "fresh" — clear and fall through to full resolution
+      debugPrint('[HTTP] Fresh cookies rejected — clearing and re-resolving');
+    }
+
+    // Step 2: Need to resolve Cloudflare — but prevent concurrent resolutions
+    debugPrint('[HTTP] 403 for $url — resolving Cloudflare...');
+
+    // Wait if another resolution is already in progress for this domain
+    if (_cfLocks.containsKey(domain)) {
+      debugPrint('[HTTP] Waiting for existing CF resolution for $domain...');
+      await _cfLocks[domain];
+      // After waiting, retry with the new cookies
+      final mergedHeaders = await _buildHeaders(url, originalHeaders);
+      try {
+        final client = await _getClient();
+        final response = await client.requestText(
+          method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+          url: url,
+          headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+          body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+        );
+        if (response.statusCode != 403) {
+          return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+        }
+      } catch (_) {}
+    }
+
+    // Step 3: Resolve Cloudflare with WebView (locked per domain)
+    final completer = Completer<bool>();
+    _cfLocks[domain] = completer.future;
+
+    try {
+      final webViewService = WebViewService();
+      final resolved = await webViewService.resolveCloudflare(url);
+
+      if (resolved) {
+        cookieStore.markResolved(url);
+
+        // Retry with rhttp + new cookies
+        final mergedHeaders = await _buildHeaders(url, originalHeaders);
+        debugPrint('[HTTP] Retrying with rhttp + cookies (${mergedHeaders['Cookie']?.length ?? 0} chars)');
+        try {
+          final client = await _getClient();
+          final response = await client.requestText(
+            method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+            url: url,
+            headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+            body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+          );
+          if (response.statusCode != 403) {
+            debugPrint('[HTTP] rhttp retry succeeded! Status: ${response.statusCode}');
+            completer.complete(true);
+            _cfLocks.remove(domain);
+            return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+          }
+        } catch (e) {
+          debugPrint('[HTTP] rhttp retry failed: $e');
+        }
+      }
+
+      // Fall back to WebView HTML fetch
+      debugPrint('[HTTP] Falling back to WebView HTML fetch...');
+      final html = await webViewService.fetchHtml(url);
+      completer.complete(true);
+      _cfLocks.remove(domain);
+      if (html != null && html.isNotEmpty) {
+        return _HttpResponse(body: html, statusCode: 200, headers: {});
+      }
+    } catch (e) {
+      completer.complete(false);
+      _cfLocks.remove(domain);
+      debugPrint('[HTTP] Cloudflare resolution error: $e');
+    }
+
+    throw Exception('Cloudflare challenge failed for $url');
+  }
+}
+
+class _HttpResponse {
+  final String body;
+  final int statusCode;
+  final Map<String, String> headers;
+
+  _HttpResponse({
+    required this.body,
+    required this.statusCode,
+    required this.headers,
+  });
+}
+
+class HttpResponseBridge {
+  static BridgedClass get bridgedClass {
+    return BridgedClass(
+      nativeType: _HttpResponse,
+      name: 'Response',
+      constructors: {},
+      methods: {},
+      getters: {
+        'body': (visitor, instance) => (instance as _HttpResponse).body,
+        'statusCode': (visitor, instance) =>
+            (instance as _HttpResponse).statusCode,
+        'headers': (visitor, instance) => (instance as _HttpResponse).headers,
+      },
+      setters: {},
+    );
+  }
+}

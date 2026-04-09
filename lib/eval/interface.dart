@@ -1,0 +1,28 @@
+import 'model/filter.dart';
+import 'model/m_manga.dart';
+import 'model/m_pages.dart';
+import 'model/page_url.dart';
+import 'model/source_preference.dart';
+
+abstract interface class ExtensionService {
+  String get sourceBaseUrl;
+  bool get supportsLatest;
+
+  void dispose();
+
+  Map<String, String> getHeaders();
+
+  Future<MPages> getPopular(int page);
+
+  Future<MPages> getLatestUpdates(int page);
+
+  Future<MPages> search(String query, int page, List<dynamic> filters);
+
+  Future<MManga> getDetail(String url);
+
+  Future<List<PageUrl>> getPageList(String url);
+
+  FilterList getFilterList();
+
+  List<SourcePreference> getSourcePreferences();
+}
