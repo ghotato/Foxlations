@@ -75,11 +75,21 @@ jobs:
           BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          # Accept the key either as raw PEM text or base64 (base64 survives
+          # copy/paste into the secret without newline mangling).
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          else
+            printf '%s' "$SSH_KEY" | tr -d '[:space:]' | base64 -d > ~/.ssh/id_ci
+          fi
           chmod 600 ~/.ssh/id_ci
+          # Fail loudly with a useful message instead of falling back to passwords.
+          if ! ssh-keygen -y -f ~/.ssh/id_ci > /dev/null 2>&1; then
+            echo "::error::SERVER_SSH_KEY is not a valid OpenSSH PRIVATE key. Paste the contents of 'foxlations_ci' (not foxlations_ci.pub), or base64 it: base64 -w0 foxlations_ci"
+            exit 1
+          fi
+          SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
           DEST="${BUILDS_PATH%/}/build-${{ steps.pkg.outputs.nnn }}"
-          ssh -i ~/.ssh/id_ci -o StrictHostKeyChecking=accept-new \
-            "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
-          scp -i ~/.ssh/id_ci -o StrictHostKeyChecking=accept-new \
-            "${{ steps.pkg.outputs.ipa }}" "${USER_NAME}@${HOST}:${DEST}/"
+          ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
+          scp $SSH_OPTS "${{ steps.pkg.outputs.ipa }}" "${USER_NAME}@${HOST}:${DEST}/"
           echo "Delivered IPA to ${USER_NAME}@${HOST}:${DEST}/"
