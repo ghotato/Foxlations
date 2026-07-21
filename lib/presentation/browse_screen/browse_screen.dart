@@ -190,25 +190,36 @@ class _BrowseScreenState extends State<BrowseScreen>
         color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
       ),
-      child: TextField(
-        controller: _searchController,
-        autofocus: true,
-        onChanged: (v) => setState(() => _searchQuery = v),
-        style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurface),
-        // Centre the text against the fixed 38px container rather than relying
-        // on a hardcoded vertical padding: iOS font metrics (ascent/descent)
-        // differ from Android's, so `vertical: 9` sat the text off-centre there.
-        textAlignVertical: TextAlignVertical.center,
-        decoration: InputDecoration(
-          hintText: 'Search extensions & sources...',
-          hintStyle: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
-          prefixIcon: Icon(Icons.search_rounded, size: 16, color: cs.outline),
-          prefixIconConstraints: const BoxConstraints(minWidth: 36),
-          border: InputBorder.none,
-          isDense: true,
-          contentPadding: EdgeInsets.zero,
-          filled: false,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      // The icon is a sibling rather than a `prefixIcon`, and the field is
+      // `isCollapsed`, so InputDecorator contributes NO intrinsic height or
+      // padding at all — the Row then centres the text against the fixed 38px
+      // box identically on both platforms. `isDense` alone wasn't enough: it
+      // only shrinks the decorator's padding, it keeps a minimum height, which
+      // on iOS (taller font metrics) still pushed the text off-centre.
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, size: 16, color: cs.outline),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurface),
+              textAlignVertical: TextAlignVertical.center,
+              decoration: InputDecoration(
+                hintText: 'Search extensions & sources...',
+                hintStyle:
+                    GoogleFonts.manrope(fontSize: 13, color: cs.outline),
+                border: InputBorder.none,
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
+                filled: false,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

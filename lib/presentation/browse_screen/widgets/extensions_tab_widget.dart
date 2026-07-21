@@ -6,6 +6,7 @@ import '../../../core/providers/source_provider.dart';
 import '../../../core/providers/vault_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'browse_source_detail_sheet.dart';
+import 'source_settings_page.dart';
 
 class ExtensionsTabWidget extends StatefulWidget {
   final String searchQuery;
@@ -137,6 +138,8 @@ class _ExtensionsTabWidgetState extends State<ExtensionsTabWidget> {
                                       isInstalled: true,
                                       onInstall: () =>
                                           provider.uninstallSource(s.id),
+                                      onSettings: () =>
+                                          _openSourceSettings(context, s),
                                       onTap: () =>
                                           _showDetail(context, s, true),
                                     )),
@@ -161,6 +164,22 @@ class _ExtensionsTabWidgetState extends State<ExtensionsTabWidget> {
           ],
         );
       },
+    );
+  }
+
+  /// Opens the source's own preferences. Needs the installed record because the
+  /// preference list comes from running the extension's getSourcePreferences().
+  void _openSourceSettings(BuildContext context, MangaSource source) {
+    final installed =
+        context.read<SourceProvider>().getInstalledSource(source.id);
+    if (installed == null) {
+      AppTheme.showSnackBar(context, 'Source is not installed');
+      return;
+    }
+    SourceSettingsPage.open(
+      context,
+      source: installed.source,
+      sourceCode: installed.sourceCode,
     );
   }
 
@@ -203,6 +222,59 @@ class _ExtensionsTabWidgetState extends State<ExtensionsTabWidget> {
   }
 
   Widget _buildFilterBar(ColorScheme cs, List<String> languages, int resultCount) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildFilterBarRow(cs, resultCount),
+        // The toggle used to flip `_showFilters` without anything reading it,
+        // so the button highlighted and nothing else happened. It now reveals
+        // the language picker — the filter `_selectedLang` already backed but
+        // which had no way to be set (only an "active chip" to clear it).
+        if (_showFilters) _buildLanguagePanel(cs, languages),
+      ],
+    );
+  }
+
+  Widget _buildLanguagePanel(ColorScheme cs, List<String> languages) {
+    final ordered = [
+      'all',
+      ...languages.where((l) => l != 'all').toList()..sort(),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final lang in ordered)
+            GestureDetector(
+              onTap: () => setState(() => _selectedLang = lang),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _selectedLang == lang
+                      ? cs.primary
+                      : cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                ),
+                child: Text(
+                  lang == 'all' ? 'All languages' : lang.toUpperCase(),
+                  style: GoogleFonts.manrope(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: _selectedLang == lang ? Colors.white : cs.onSurface,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterBarRow(ColorScheme cs, int resultCount) {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -349,12 +421,14 @@ class _ExtensionRow extends StatelessWidget {
   final MangaSource source;
   final bool isInstalled;
   final VoidCallback onInstall;
+  final VoidCallback? onSettings;
   final VoidCallback? onTap;
 
   const _ExtensionRow({
     required this.source,
     required this.isInstalled,
     required this.onInstall,
+    this.onSettings,
     this.onTap,
   });
 
@@ -465,10 +539,11 @@ class _ExtensionRow extends StatelessWidget {
                   ],
                 ),
               ),
-              // Install / Remove button
+              // Not installed → Install. Installed → Settings, which opens the
+              // source's own preferences (Remove lives in there).
               _InstallButton(
                 isInstalled: isInstalled,
-                onPressed: onInstall,
+                onPressed: isInstalled ? (onSettings ?? onInstall) : onInstall,
               ),
             ],
           ),
@@ -489,7 +564,7 @@ class _InstallButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isInstalled ? AppTheme.error : Theme.of(context).colorScheme.primary;
+    final color = Theme.of(context).colorScheme.primary;
 
     return GestureDetector(
       onTap: onPressed,
@@ -506,7 +581,7 @@ class _InstallButton extends StatelessWidget {
           ),
         ),
         child: Text(
-          isInstalled ? 'Remove' : 'Install',
+          isInstalled ? 'Settings' : 'Install',
           style: GoogleFonts.manrope(
             fontSize: 12,
             fontWeight: FontWeight.w600,

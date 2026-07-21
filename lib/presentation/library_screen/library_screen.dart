@@ -9,8 +9,11 @@ import '../../core/providers/library_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/services/library_update_service.dart';
+import '../../core/models/library_settings.dart';
+import '../../core/utils/library_query.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
+import './widgets/library_options_sheet.dart';
 import './widgets/library_stats_widget.dart';
 
 /// SharedPreferences key for the persisted set of `${sourceId}::${mangaUrl}`
@@ -40,12 +43,17 @@ class _LibraryScreenState extends State<LibraryScreen>
     with TickerProviderStateMixin {
   bool _isSearchActive = false;
   String _searchQuery = '';
-  bool _isGridView = true;
+  /// Derived from the Display tab so the sheet and the toolbar toggle can't
+  /// disagree — previously this was independent state, which meant choosing a
+  /// display mode in the sheet had no effect on what was actually rendered.
+  bool get _isGridView =>
+      _librarySettings.displayMode == LibraryDisplayMode.grid;
   bool _showStats = false;
   bool _showBookmarksOnly = false;
   final Set<String> _bookmarkedIds = {};
   String? _selectedCategory; // null = "All"
   bool _isRefreshing = false;
+  LibrarySettings _librarySettings = const LibrarySettings();
 
   // Multi-select mode
   bool _isSelectMode = false;
@@ -68,14 +76,26 @@ class _LibraryScreenState extends State<LibraryScreen>
     return cats.map((c) => c.name).toList();
   }
 
-  Future<void> _checkForUpdates() async {
+  Future<void> _checkForUpdates() => _refreshLibrary();
+
+  /// [scoped] limits the check to the entries currently on screen (the selected
+  /// category), which is what "Category Update" means.
+  Future<void> _refreshLibrary({bool scoped = false}) async {
     if (_isRefreshing) return;
+    final subset = scoped
+        ? _activeManga(context)
+            .where((m) =>
+                _selectedCategory == null ||
+                m.categories.contains(_selectedCategory))
+            .toList()
+        : null;
     setState(() => _isRefreshing = true);
     final libraryProvider = context.read<LibraryProvider>();
     final sourceProvider = context.read<SourceProvider>();
     final newUpdates = await LibraryUpdateService.checkForUpdates(
       libraryProvider: libraryProvider,
       sourceProvider: sourceProvider,
+      only: subset,
     );
     if (mounted) {
       setState(() => _isRefreshing = false);
@@ -91,6 +111,176 @@ class _LibraryScreenState extends State<LibraryScreen>
   void initState() {
     super.initState();
     _loadBookmarks();
+    _loadLibrarySettings();
+  }
+
+  Future<void> _loadLibrarySettings() async {
+    final s = await LibrarySettings.load();
+    if (mounted) setState(() => _librarySettings = s);
+  }
+
+  void _applyLibrarySettings(LibrarySettings next) {
+    setState(() => _librarySettings = next);
+    next.save();
+  }
+
+  void _openLibraryOptions() {
+    LibraryOptionsSheet.show(
+      context,
+      settings: _librarySettings,
+      sources: _librarySources(context),
+      onChanged: _applyLibrarySettings,
+    );
+  }
+
+  /// The "More" menu: update scopes plus the entry-level actions.
+  Future<void> _openMoreMenu() async {
+    final cs = Theme.of(context).colorScheme;
+    final inCategory = _selectedCategory != null;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.radiusLarge)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            for (final item in [
+              if (inCategory)
+                (
+                  'category',
+                  Icons.refresh_rounded,
+                  'Category Update',
+                  'Check "$_selectedCategory" for new chapters'
+                ),
+              (
+                'global',
+                Icons.public_rounded,
+                'Global Update',
+                'Check every entry in your library'
+              ),
+              (
+                'summary',
+                Icons.info_outline_rounded,
+                'Updates Summary',
+                'What the last check found'
+              ),
+              ('select', Icons.check_circle_outline_rounded, 'Select', ''),
+              ('random', Icons.shuffle_rounded, 'Open random entry', ''),
+            ])
+              ListTile(
+                leading: Icon(item.$2, color: cs.primary, size: 22),
+                title: Text(item.$3,
+                    style: GoogleFonts.manrope(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface)),
+                subtitle: item.$4.isEmpty
+                    ? null
+                    : Text(item.$4,
+                        style: GoogleFonts.manrope(
+                            fontSize: 12, color: cs.outline)),
+                onTap: () => Navigator.pop(ctx, item.$1),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+
+    switch (choice) {
+      case 'category':
+      case 'global':
+        // Category Update reuses the same checker, scoped to what's on screen;
+        // Global ignores the category filter and checks the whole library.
+        await _refreshLibrary(
+          scoped: choice == 'category',
+        );
+        break;
+      case 'summary':
+        await _showUpdatesSummary();
+        break;
+      case 'select':
+        setState(() => _isSelectMode = true);
+        break;
+      case 'random':
+        final list = _applyFilters(_activeManga(context));
+        if (list.isEmpty) {
+          AppTheme.showSnackBar(context, 'Library is empty');
+          break;
+        }
+        final pick = list[DateTime.now().microsecond % list.length];
+        Navigator.pushNamed(context, AppRoutes.mangaDetail, arguments: pick);
+        break;
+    }
+  }
+
+  Future<void> _showUpdatesSummary() async {
+    final updates = await LibraryUpdateService.loadUpdates();
+    final last = await LibraryUpdateService.getLastUpdate();
+    if (!mounted) return;
+    final cs = Theme.of(context).colorScheme;
+    final when = last == null
+        ? 'never'
+        : '${last.year}-${last.month.toString().padLeft(2, '0')}-'
+            '${last.day.toString().padLeft(2, '0')} '
+            '${last.hour.toString().padLeft(2, '0')}:'
+            '${last.minute.toString().padLeft(2, '0')}';
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: cs.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+        title: Text('Updates Summary',
+            style: GoogleFonts.manrope(
+                fontSize: 16, fontWeight: FontWeight.w700)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Last checked: $when',
+                style: GoogleFonts.manrope(fontSize: 13, color: cs.outline)),
+            const SizedBox(height: 8),
+            Text(
+              updates.isEmpty
+                  ? 'No new chapters were found in the last check.'
+                  : '${updates.length} '
+                      'entr${updates.length == 1 ? 'y has' : 'ies have'} '
+                      'new chapters.',
+              style: GoogleFonts.manrope(fontSize: 14, color: cs.onSurface),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Sources present in the library, for the Filter tab's Sources list.
+  List<({String id, String name})> _librarySources(BuildContext context) {
+    final installed = context.read<SourceProvider>().installedSources;
+    final ids = _activeManga(context).map((m) => m.sourceId).toSet();
+    final named = <String, String>{};
+    for (final id in ids) {
+      final match = installed.where((s) => s.source.id == id);
+      named[id] = match.isNotEmpty ? match.first.source.name : id;
+    }
+    final entries = named.entries
+        .map((e) => (id: e.key, name: e.value))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return entries;
   }
 
   Future<void> _loadBookmarks() async {
@@ -137,7 +327,8 @@ class _LibraryScreenState extends State<LibraryScreen>
       list = list.where((m) => m.title.toLowerCase().contains(q)).toList();
     }
 
-    return list;
+    // User-chosen filters + sort order (Filter/Sort sheet).
+    return applyLibraryQuery(list, _librarySettings);
   }
 
   void _onSearchToggle() {
@@ -386,11 +577,17 @@ class _LibraryScreenState extends State<LibraryScreen>
     return withRead.first;
   }
 
+  /// Columns for the grid. The user's "Items per row" wins; the width-based
+  /// values are only the starting point before they've chosen one, and still
+  /// cap the count on narrow phones so cards don't become unreadably small.
   int _getColumnCount(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    if (width >= 840) return 4;
-    if (width >= 600) return 3;
-    return 2;
+    final maxForWidth = width >= 840
+        ? 6
+        : width >= 600
+            ? 5
+            : 4;
+    return _librarySettings.itemsPerRow.clamp(2, maxForWidth);
   }
 
   PreferredSizeWidget _buildSelectAppBar(ColorScheme cs) {
@@ -469,9 +666,18 @@ class _LibraryScreenState extends State<LibraryScreen>
                 isVaultMode: isVault,
                 onSearchToggle: _onSearchToggle,
                 onSearchChanged: (q) => setState(() => _searchQuery = q),
-                onViewToggle: () => setState(() => _isGridView = !_isGridView),
+                onViewToggle: () => _applyLibrarySettings(
+                      _librarySettings.copyWith(
+                        displayMode: _isGridView
+                            ? LibraryDisplayMode.list
+                            : LibraryDisplayMode.grid,
+                      ),
+                    ),
                 onStatsTap: () => setState(() => _showStats = !_showStats),
                 onRefresh: _checkForUpdates,
+                onOptionsTap: _openLibraryOptions,
+                onMoreTap: _openMoreMenu,
+                hasActiveFilter: _librarySettings.hasActiveFilter,
                 isRefreshing: _isRefreshing,
               ),
         body: SafeArea(
@@ -622,6 +828,9 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onStatsTap;
   final VoidCallback? onRefresh;
   final bool isRefreshing;
+  final VoidCallback onOptionsTap;
+  final VoidCallback onMoreTap;
+  final bool hasActiveFilter;
 
   const _LibraryAppBar({
     required this.isSearchActive,
@@ -635,6 +844,9 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onSearchChanged,
     required this.onViewToggle,
     required this.onStatsTap,
+    required this.onOptionsTap,
+    required this.onMoreTap,
+    this.hasActiveFilter = false,
     this.onRefresh,
     this.isRefreshing = false,
   });
@@ -690,13 +902,31 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
                     onTap: onRefresh!,
                     tooltip: 'Check for updates',
                   ),
+          // Filter / Sort / Display. Dot marks that a filter is narrowing the
+          // list, so a "missing" entry is never a mystery.
           if (!showStats)
-            _AppBarAction(
-              icon: isGridView
-                  ? Icons.view_list_rounded
-                  : Icons.grid_view_rounded,
-              onTap: onViewToggle,
-              tooltip: isGridView ? 'List view' : 'Grid view',
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                _AppBarAction(
+                  icon: Icons.filter_list_rounded,
+                  onTap: onOptionsTap,
+                  tooltip: 'Filter, sort & display',
+                ),
+                if (hasActiveFilter)
+                  Positioned(
+                    top: 12,
+                    right: 10,
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           _AppBarAction(
             icon: showStats
@@ -705,6 +935,12 @@ class _LibraryAppBar extends StatelessWidget implements PreferredSizeWidget {
             onTap: onStatsTap,
             tooltip: showStats ? 'Library' : 'Stats',
           ),
+          if (!showStats)
+            _AppBarAction(
+              icon: Icons.more_vert_rounded,
+              onTap: onMoreTap,
+              tooltip: 'More',
+            ),
         ] else
           _AppBarAction(
             icon: Icons.close_rounded,

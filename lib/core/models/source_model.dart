@@ -1,3 +1,17 @@
+/// FNV-1a (64-bit) over [seed].
+///
+/// Deliberately NOT `String.hashCode`: Dart makes no guarantee that it is
+/// stable across runs or VM versions, and installed sources are persisted by
+/// id — an id that changed between launches would orphan the user's installs.
+String _stableHash(String seed) {
+  var hash = 0xcbf29ce484222325;
+  for (final unit in seed.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
+  }
+  return hash.toRadixString(16);
+}
+
 /// A manga source from our extension repository index.json.
 /// Uses our own Foxlations format.
 class MangaSource {
@@ -86,8 +100,25 @@ class MangaSource {
       return 'dart';
     }
 
+    // Tachiyomi/keiyoushi index entries carry NO top-level `id` — the real id
+    // lives inside their `sources[]` array. Without a fallback every row parsed
+    // to id '', so they all collided and installing one flipped the entire
+    // catalogue to "installed". Derive a stable id from whatever identifies the
+    // row instead.
+    String resolveId() {
+      final explicit = asStr(json['id']);
+      if (explicit.isNotEmpty) return explicit;
+      final seed = [
+        asStr(json['pkg']),
+        asStr(json['name']),
+        asStr(json['lang']),
+        asStr(json['baseUrl']),
+      ].where((e) => e.isNotEmpty).join('|');
+      return seed.isEmpty ? '' : _stableHash(seed);
+    }
+
     return MangaSource(
-      id: asStr(json['id']),
+      id: resolveId(),
       name: asStr(json['name'], 'Unknown'),
       baseUrl: asStr(json['baseUrl']),
       lang: asStr(json['lang'], 'en'),

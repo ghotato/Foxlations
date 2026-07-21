@@ -213,6 +213,22 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Installing a source from a repo no longer marks '
+                'every other source as installed — repo entries that share no '
+                'ID are now told apart, and extensions that bundle several '
+                'sources let you install each one separately'),
+            _ChangelogItem('Library: new Filter / Sort / Display sheet — filter '
+                'by unread, completed, downloaded or source; sort by title, '
+                'last read, unread count, chapters or date added; switch '
+                'between grid and list, set items per row, and toggle badges'),
+            _ChangelogItem('Library: new menu for Category Update, Global '
+                'Update, an updates summary, multi-select, and opening a '
+                'random entry'),
+            _ChangelogItem('Installed sources now have a Settings button that '
+                'opens the options that source provides (things like hiding '
+                'premium chapters)'),
+            _ChangelogItem('The Filter button on the extensions list works now '
+                '— it opens a language picker instead of doing nothing'),
             _ChangelogItem('Importing a Tachiyomi/Mihon/Tachimanga backup now '
                 'works — Tachimanga\'s .tmb files are recognised, and a backup '
                 'that can\'t be read tells you what\'s wrong instead of failing '

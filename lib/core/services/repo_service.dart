@@ -227,6 +227,27 @@ class RepoService {
     return 'manga';
   }
 
+  /// Expand one index row into the source rows it actually represents.
+  ///
+  /// A Tachiyomi/keiyoushi entry describes an *extension*, which may ship
+  /// several sources in a nested `sources[]` array (75 of keiyoushi's 1368 do).
+  /// Collapsing those to one row made the extra sources unreachable, so each
+  /// nested source becomes its own row: parent fields (pkg, version, nsfw…) are
+  /// inherited, and the child's own id/name/lang/baseUrl win.
+  List<Map<String, dynamic>> _expandSourceRows(Map<String, dynamic> entry) {
+    final nested = entry['sources'];
+    if (nested is! List || nested.isEmpty) return [entry];
+
+    final rows = <Map<String, dynamic>>[];
+    for (final child in nested.whereType<Map>()) {
+      final merged = Map<String, dynamic>.from(entry)
+        ..remove('sources')
+        ..addAll(child.map((k, v) => MapEntry(k.toString(), v)));
+      rows.add(merged);
+    }
+    return rows.isEmpty ? [entry] : rows;
+  }
+
   RepoIndexResult _parseIndex(dynamic data, String repoUrl,
       {String? defaultType}) {
     if (data is String) {
@@ -260,6 +281,7 @@ class RepoService {
     if (data is List) {
       final sources = data
           .whereType<Map<String, dynamic>>()
+          .expand(_expandSourceRows)
           .map((e) => MangaSource.fromJson(e, repoUrl, defaultType: dt))
           .where((s) => s.name.isNotEmpty)
           .toList();

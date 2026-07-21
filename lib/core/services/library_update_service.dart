@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/manga_model.dart';
 import '../providers/library_provider.dart';
 import '../providers/source_provider.dart';
 import '../../eval/lib.dart';
@@ -67,13 +68,17 @@ class LibraryUpdateService {
     return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
   }
 
-  /// Check all library manga for new chapters.
+  /// Checks the library for new chapters.
+  ///
+  /// [only] restricts the check to a subset — used by "Category Update" so it
+  /// checks just the visible category instead of every entry.
   static Future<List<MangaUpdate>> checkForUpdates({
     required LibraryProvider libraryProvider,
     required SourceProvider sourceProvider,
     void Function(int checked, int total)? onProgress,
+    List<LibraryManga>? only,
   }) async {
-    final manga = libraryProvider.manga;
+    final manga = only ?? libraryProvider.manga;
     final newUpdates = <MangaUpdate>[];
     int checked = 0;
 
