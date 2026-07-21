@@ -1,7 +1,7 @@
 name: manga_reader
 description: A manga reading app with extension-based sources.
 publish_to: 'none'
-version: 0.0.25+19
+version: 0.0.26+20
 
 environment:
   sdk: ^3.11.3
@@ -79,8 +79,14 @@ dev_dependencies:
 
 flutter_launcher_icons:
   android: true
-  ios: false
+  ios: true
   image_path: "assets/images/foxlations.png"
+  # iOS needs a 1024px OPAQUE icon — the 256px source has an alpha channel,
+  # which iOS renders as a black background. Use the full-size art and flatten
+  # it onto white so the sideloaded app shows the fox, not Flutter's default.
+  image_path_ios: "assets/images/foxlations_1024.png"
+  remove_alpha_ios: true
+  background_color_ios: "#ffffff"
   windows:
     generate: true
     image_path: "assets/images/foxlations.png"

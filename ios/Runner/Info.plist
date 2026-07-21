@@ -66,5 +66,123 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- ── iOS parity with AndroidManifest.xml ──────────────────────────── -->
+	<!-- Android sets usesCleartextTraffic="true". WKWebView (Cloudflare
+	     bypass, cookie extraction, OAuth) is fully ATS-governed, so without
+	     this every http:// source page and mixed-content subresource is
+	     blocked on iOS only. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Backups, exported sources and downloaded chapters live in the app's
+	     Documents dir. Without these two keys that directory is invisible in
+	     the Files app, so a backup can never be retrieved off the device. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- MyAnimeList's OAuth redirect (foxlations://auth). The flow is
+	     intercepted in-WebView, but registering the scheme stops iOS from
+	     dropping the URL if a redirect ever escapes the WebView. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.foxlations.mangaReader.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>foxlations</string>
+			</array>
+		</dict>
+	</array>
+	<!-- iOS has no system UTI for cbz/cbr, so file_picker silently drops them
+	     and they appear greyed out in the document picker. Declaring them
+	     restores local import and enables "Open in Foxlations". -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.foxlations.cbz</string>
+			<key>UTTypeDescription</key>
+			<string>Comic Book Archive (ZIP)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbz</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.foxlations.cbr</string>
+			<key>UTTypeDescription</key>
+			<string>Comic Book Archive (RAR)</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbr</string>
+					<string>rar</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Comic / Book Archive</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.foxlations.cbz</string>
+				<string>com.foxlations.cbr</string>
+				<string>public.zip-archive</string>
+				<string>org.idpf.epub-container</string>
+				<string>com.adobe.pdf</string>
+			</array>
+		</dict>
+	</array>
+	<!-- WKWebView reaches Photos/Camera on its own for <input type="file"> and
+	     long-press "Save Image" on arbitrary source sites. Hitting either
+	     without a usage string is an immediate SIGABRT, not a denial. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Foxlations needs photo access to import images you choose.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Foxlations needs permission to save manga pages and exported files to your photo library.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Foxlations needs camera access when a website asks you to take a photo.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Foxlations needs microphone access when a website asks to record audio.</string>
+	<!-- The Koharu AI translation server usually runs on the user's LAN.
+	     Since iOS 14 that requires this key or the connection fails silently. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Foxlations connects to a translation server running on your local network.</string>
+	<!-- Paired with the AVAudioSession .playback category set in
+	     AppDelegate.swift — without this key, backgrounding while playing
+	     gets the app killed by the watchdog. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

@@ -44,7 +44,10 @@ OUT="builds/build-${NNN}"
 mkdir -p "$OUT"
 APK="${OUT}/foxlations-${NEWVER}-arm64.apk"
 cp -f build/app/outputs/flutter-apk/app-release.apk "$APK"
-SIZE=$(du -h "$APK" | cut -f1)
+# NOT `du`: the builds dir is on ZFS with compression, so du reports the
+# compressed on-disk size (and returns ~512 right after the copy, before blocks
+# are flushed). ls gives the apparent size, which is what users download.
+SIZE=$(ls -lh "$APK" | awk '{print $5}')
 
 {
   echo "Build ${NNN}"

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import '../core/models/source_model.dart';
 import 'model/m_source.dart';
 import 'interface.dart';
@@ -40,7 +43,15 @@ ExtensionService getExtensionService(
   }
 }
 
-Future<T> withExtensionService<T>(
+bool _isJsSource(MangaSource source) {
+  final lang = source.sourceCodeLanguage;
+  return lang == 'js' || lang == 'javascript';
+}
+
+/// Serializes JS extension work on iOS — see [withExtensionService].
+Future<void> _jsQueue = Future<void>.value();
+
+Future<T> _runExtensionService<T>(
   MangaSource source,
   String sourceCode,
   Future<T> Function(ExtensionService service) action,
@@ -50,5 +61,41 @@ Future<T> withExtensionService<T>(
     return await action(service);
   } finally {
     service.dispose();
+  }
+}
+
+/// Runs [action] against a freshly built extension service, disposing it after.
+///
+/// On iOS, JS sources are queued so only ONE JavaScriptCore runtime is alive at
+/// a time. flutter_js runs QuickJS on Android but JavaScriptCore on iOS, and
+/// the JSC binding keeps its Dart `sendMessage` callback in a **static** field
+/// (`jscore_runtime.dart:171`) because an FFI callback must be top-level.
+/// Constructing a second runtime therefore overwrites the bridge for every
+/// runtime already live: preference lookups resolve against the wrong source,
+/// and promises get built on the wrong JSGlobalContext so they never settle.
+/// `dispose()` only releases the context and never clears the static, so a
+/// disposed runtime can leave the survivors calling into freed memory.
+///
+/// Global search and migrate fan out across every installed source at once,
+/// which is exactly the pattern that triggers it. QuickJS installs the callback
+/// per-instance, so Android needs no such guard and keeps running in parallel.
+Future<T> withExtensionService<T>(
+  MangaSource source,
+  String sourceCode,
+  Future<T> Function(ExtensionService service) action,
+) async {
+  if (!Platform.isIOS || !_isJsSource(source)) {
+    return _runExtensionService(source, sourceCode, action);
+  }
+
+  final previous = _jsQueue;
+  final gate = Completer<void>();
+  _jsQueue = gate.future;
+  await previous;
+  try {
+    return await _runExtensionService(source, sourceCode, action);
+  } finally {
+    // Always completes normally so one failing source can't stall the queue.
+    gate.complete();
   }
 }

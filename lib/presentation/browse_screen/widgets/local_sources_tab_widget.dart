@@ -33,7 +33,26 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
     if (mounted) setState(() => _loading = false);
   }
 
+  /// iOS hands back a security-scoped URL from the folder picker that the app
+  /// cannot re-open later, so the folder scans to nothing and the user is left
+  /// staring at an empty shelf with no error. Say so and point at file import,
+  /// which works because it copies the picked file into our own sandbox.
+  bool _warnIfFoldersUnsupported() {
+    if (!Platform.isIOS) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'iOS does not allow apps to keep access to a folder. '
+          'Use "Import File" to add .cbz/.cbr/.zip/.epub/.pdf instead.',
+        ),
+        duration: Duration(seconds: 5),
+      ),
+    );
+    return true;
+  }
+
   Future<void> _addFolder() async {
+    if (_warnIfFoldersUnsupported()) return;
     final path = await FilePicker.getDirectoryPath();
     if (path != null) {
       await _service.addFolder(path);
@@ -253,6 +272,7 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
                 side: BorderSide(color: cs.primary.withAlpha(80)),
                 padding: const EdgeInsets.symmetric(vertical: 10)),
               onPressed: () async {
+                if (_warnIfFoldersUnsupported()) return;
                 final path = await FilePicker.getDirectoryPath();
                 if (path != null) {
                   await _service.addFolder(path);

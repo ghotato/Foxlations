@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -195,6 +197,23 @@ class _DownloadsSettingsPageState extends State<DownloadsSettingsPage> {
                           padding: const EdgeInsets.symmetric(vertical: 8),
                         ),
                         onPressed: () async {
+                          // iOS returns a security-scoped URL the app can't
+                          // re-open later, so the custom path silently fails
+                          // its exists() check and downloads quietly revert to
+                          // the default location.
+                          if (Platform.isIOS) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'iOS does not allow apps to keep access to a '
+                                  'folder. Downloads stay in the app\'s folder, '
+                                  'reachable via Files › On My iPhone › Foxlations.',
+                                ),
+                                duration: Duration(seconds: 5),
+                              ),
+                            );
+                            return;
+                          }
                           final path = await FilePicker.getDirectoryPath();
                           if (path != null) {
                             await DownloadService().setDownloadPath(path);

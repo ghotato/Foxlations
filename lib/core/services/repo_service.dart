@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/source_model.dart';
+import '../utils/portable_path.dart';
 import 'app_logger.dart';
 
 class RepoIndexResult {
@@ -50,16 +51,36 @@ class RepoService {
     return url;
   }
 
+  /// Whether a persisted entry is a filesystem path rather than a remote URL.
+  bool _isStoredPath(String entry) =>
+      !entry.startsWith('http://') && !entry.startsWith('https://');
+
+  /// Saved repos, with local paths resolved for the current app container.
+  ///
+  /// RepoForge stores its own `index.json` path here alongside remote URLs, and
+  /// the iOS container is re-created on every re-sign — see [PortablePath].
+  /// Without this, every RepoForge-authored source disappears about weekly.
   Future<List<String>> getSavedRepos() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_reposKey) ?? [];
+    final stored = prefs.getStringList(_reposKey) ?? [];
+    return [
+      for (final entry in stored)
+        if (_isStoredPath(entry)) await PortablePath.resolve(entry) else entry,
+    ];
   }
 
   Future<void> addRepo(String url) async {
     final prefs = await SharedPreferences.getInstance();
     final repos = prefs.getStringList(_reposKey) ?? [];
-    if (repos.contains(url)) return;
-    repos.add(url);
+    final entry = _isLocalPath(url) ? await PortablePath.store(url) : url;
+    for (final existing in repos) {
+      if (existing == entry) return;
+      if (_isStoredPath(existing) &&
+          await PortablePath.resolve(existing) == url) {
+        return;
+      }
+    }
+    repos.add(entry);
     await prefs.setStringList(_reposKey, repos);
     await logger.info('Added repo: $url', category: LogCategory.repo);
   }
@@ -67,8 +88,13 @@ class RepoService {
   Future<void> removeRepo(String url) async {
     final prefs = await SharedPreferences.getInstance();
     final repos = prefs.getStringList(_reposKey) ?? [];
-    repos.remove(url);
-    await prefs.setStringList(_reposKey, repos);
+    final kept = <String>[];
+    for (final entry in repos) {
+      final resolved =
+          _isStoredPath(entry) ? await PortablePath.resolve(entry) : entry;
+      if (entry != url && resolved != url) kept.add(entry);
+    }
+    await prefs.setStringList(_reposKey, kept);
     await prefs.remove('$_indexCachePrefix${_cacheKey(url)}');
     await logger.info('Removed repo: $url', category: LogCategory.repo);
   }

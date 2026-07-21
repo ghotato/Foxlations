@@ -112,11 +112,23 @@ class _MangaImageState extends State<MangaImage>
       return widget.errorWidget ?? _defaultError(context);
     }
     final displayBytes = widget.translatedBytes ?? _bytes!;
+
+    // Decode covers at their display size instead of full resolution — a grid
+    // of dozens of 1400px covers decoded at full size is tens of MB of ARGB for
+    // thumbnails a few hundred pixels wide. Reader pages pass no width (they
+    // fill the viewport and get zoomed), so they keep decoding full-res and
+    // stay sharp.
+    final width = widget.width;
+    final cacheWidth = (width != null && width.isFinite && width > 0)
+        ? (width * MediaQuery.of(context).devicePixelRatio).round()
+        : null;
+
     return Image.memory(
       displayBytes,
       fit: widget.fit,
       width: widget.width,
       height: widget.height,
+      cacheWidth: cacheWidth,
       gaplessPlayback: true, // Prevents flicker during rebuild
       errorBuilder: (_, __, ___) =>
           widget.errorWidget ?? _defaultError(context),

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/portable_path.dart';
 
 /// Represents a locally stored manga series.
 class LocalManga {
@@ -75,28 +76,39 @@ class LocalSourceService {
       .replaceAll(RegExp(r'\.+$'), '')
       .trim();
 
-  /// Get saved local source folder paths.
+  /// Get saved local source folder paths, resolved for the current container.
+  ///
+  /// Stored entries go through [PortablePath] because the iOS app container is
+  /// re-created on every re-sign; without this, imported manga silently
+  /// disappears roughly weekly on a sideloaded build.
   Future<List<String>> getFolders() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_foldersKey) ?? [];
+    final stored = prefs.getStringList(_foldersKey) ?? [];
+    return [for (final entry in stored) await PortablePath.resolve(entry)];
   }
 
   /// Add a local source folder.
   Future<void> addFolder(String path) async {
     final prefs = await SharedPreferences.getInstance();
-    final folders = prefs.getStringList(_foldersKey) ?? [];
-    if (!folders.contains(path)) {
-      folders.add(path);
-      await prefs.setStringList(_foldersKey, folders);
+    final stored = prefs.getStringList(_foldersKey) ?? [];
+    for (final entry in stored) {
+      if (await PortablePath.resolve(entry) == path) return;
     }
+    stored.add(await PortablePath.store(path));
+    await prefs.setStringList(_foldersKey, stored);
   }
 
-  /// Remove a local source folder.
+  /// Remove a local source folder. [path] is an absolute (resolved) path.
   Future<void> removeFolder(String path) async {
     final prefs = await SharedPreferences.getInstance();
-    final folders = prefs.getStringList(_foldersKey) ?? [];
-    folders.remove(path);
-    await prefs.setStringList(_foldersKey, folders);
+    final stored = prefs.getStringList(_foldersKey) ?? [];
+    final kept = <String>[];
+    for (final entry in stored) {
+      if (entry != path && await PortablePath.resolve(entry) != path) {
+        kept.add(entry);
+      }
+    }
+    await prefs.setStringList(_foldersKey, kept);
   }
 
   /// Scan all local source folders for manga.

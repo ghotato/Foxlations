@@ -32,6 +32,18 @@ target 'Runner' do
   use_frameworks!
   use_modular_headers!
 
+  # Parity with android/app/build.gradle.kts (text-recognition-{chinese,
+  # japanese,korean,devanagari}). The google_mlkit_text_recognition podspec
+  # only pulls GoogleMLKit/TextRecognition (Latin), and its native plugin gates
+  # the other scripts behind `#if __has_include(...)` with `default:` — the
+  # LATIN case — first in the switch. So without these pods, asking for
+  # japanese/korean/chinese silently returns a LATIN recognizer: no exception,
+  # no log, just garbage OCR on every CJK page.
+  pod 'GoogleMLKit/TextRecognitionChinese',    '~> 7.0.0'
+  pod 'GoogleMLKit/TextRecognitionDevanagari', '~> 7.0.0'
+  pod 'GoogleMLKit/TextRecognitionJapanese',   '~> 7.0.0'
+  pod 'GoogleMLKit/TextRecognitionKorean',     '~> 7.0.0'
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths

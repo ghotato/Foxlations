@@ -213,6 +213,26 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('iPhone/iPad support — JavaScript sources now load '
+                'correctly on iOS (they previously failed with a type error on '
+                'every search and browse), and searching many sources at once no '
+                'longer hangs or mixes up results between them'),
+            _ChangelogItem('iOS: sites served over plain http now load, video '
+                'audio is no longer silenced by the Ring/Silent switch or cut '
+                'off when you leave the app, and .cbz/.cbr files can be picked '
+                'again when importing'),
+            _ChangelogItem('iOS: Japanese, Korean and Chinese text recognition '
+                'now works for AI translation — before, those pages were quietly '
+                'scanned as if they were English and produced nonsense'),
+            _ChangelogItem('iOS: your imported local manga and RepoForge sources '
+                'no longer disappear after the app is reinstalled or re-signed'),
+            _ChangelogItem('iOS: backups and downloads are now reachable from the '
+                'Files app under On My iPhone › Foxlations'),
+            _ChangelogItem('Reader uses far less memory — covers are decoded at '
+                'the size they\'re shown and the page cache is capped by actual '
+                'memory used, which stops the app being killed mid-chapter'),
+            _ChangelogItem('App icon now shows the Foxlations fox on iOS instead '
+                'of the default Flutter logo'),
             _ChangelogItem('Sources added from a repo now detect manga / anime / '
                 'light novel correctly (reads Mangayomi-style itemType) and '
                 'auto-imports a repo\'s anime and novel indexes, not just manga'),

@@ -252,11 +252,46 @@ var extention = new DefaultExtension();
     }
   }
 
+  /// Decodes a JSON payload coming back from the JS engine.
+  ///
+  /// flutter_js uses a different engine per platform — QuickJS on Android,
+  /// JavaScriptCore on iOS — and they resolve promises differently. QuickJS
+  /// hands the resolved value back as a Dart Future and stringifies it once
+  /// (`"$res"`), but JSC reports `[object Promise]` and takes the branch in
+  /// flutter_js `handle_promises.dart` that runs `JSON.stringify()` over the
+  /// value a SECOND time. Since `jsonStringify()` already returns a string,
+  /// iOS payloads arrive double-encoded and a single decode yields a String
+  /// instead of the Map/List the caller expects.
+  ///
+  /// Detect that structurally: only a re-encoded payload decodes to a string
+  /// that itself starts with a JSON delimiter. Real string results (page HTML)
+  /// start with `<` or plain text, so they're left alone on both platforms.
+  T _decodeJsResult<T>(String raw) {
+    dynamic value = jsonDecode(raw);
+    if (value is String) {
+      // Re-decode when the caller wants something other than a String (the
+      // string is clearly a wrapper), or — when T is dynamic, as it is for
+      // getHtmlContent — when the payload still looks like encoded JSON.
+      final trimmed = value.trimLeft();
+      final looksEncoded = trimmed.startsWith('{') ||
+          trimmed.startsWith('[') ||
+          trimmed.startsWith('"');
+      if (value is! T || looksEncoded) {
+        try {
+          value = jsonDecode(value);
+        } catch (_) {
+          // Not double-encoded after all — keep the string as-is.
+        }
+      }
+    }
+    return value as T;
+  }
+
   T _extensionCall<T>(String call, T defaultValue) {
     _init();
     try {
       final res = runtime.evaluate('JSON.stringify(extention.$call)');
-      return jsonDecode(res.stringResult) as T;
+      return _decodeJsResult<T>(res.stringResult);
     } catch (_) {
       return defaultValue;
     }
@@ -268,6 +303,6 @@ var extention = new DefaultExtension();
       'jsonStringify(() => extention.$call)',
     );
     final promised = await runtime.handlePromise(jsResult);
-    return jsonDecode(promised.stringResult) as T;
+    return _decodeJsResult<T>(promised.stringResult);
   }
 }

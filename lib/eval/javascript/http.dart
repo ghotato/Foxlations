@@ -4,6 +4,7 @@ import 'package:flutter_js/flutter_js.dart';
 import '../../core/services/cookie_store.dart';
 import '../../core/services/webview_service.dart';
 import '../../presentation/webview_screen/cf_challenge_screen.dart';
+import '../dart/bridge/http.dart' show isBackgroundIsolate;
 
 /// Injects HTTP client functions into the JS runtime.
 class JsHttpClient {
@@ -83,6 +84,16 @@ class JsHttpClient {
     }
 
     // Cloudflare challenge — solve headless first, then retry.
+    //
+    // A background isolate can't drive a WebView: `rootNavigatorKey` is a
+    // different, null instance there, so the interactive fallback always
+    // returns false and the headless attempt just burns its 30s timeout before
+    // failing anyway. The Dart bridge guards this the same way — bail out and
+    // let the caller retry on the main isolate.
+    if (isBackgroundIsolate) {
+      return encode(resp);
+    }
+
     var resolved = await WebViewService().resolveCloudflare(url);
     // If the headless solve couldn't clear it (interactive Turnstile / captcha),
     // ask the user to complete it in a visible WebView.

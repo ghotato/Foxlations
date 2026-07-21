@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
 import 'cookie_store.dart';
@@ -10,8 +12,14 @@ class ImageLoader {
   ImageLoader._();
 
   rhttp.RhttpClient? _client;
+  /// Insertion-ordered, so `keys.first` is the oldest entry.
   final Map<String, Uint8List> _cache = {};
-  static const int _maxCacheSize = 200;
+  int _cacheBytes = 0;
+
+  /// Encoded-image cache budget. Bytes are the real constraint — entry count
+  /// is kept only as a secondary guard against pathologically tiny images.
+  static const int _maxCacheBytes = 64 * 1024 * 1024;
+  static const int _maxCacheEntries = 200;
   final Set<String> _blockedDomains = {};
 
   Future<rhttp.RhttpClient> _getClient() async {
@@ -47,9 +55,16 @@ class ImageLoader {
       'sec-fetch-dest': 'image',
       'sec-fetch-mode': 'no-cors',
       'sec-fetch-site': isCrossOrigin ? 'cross-site' : 'same-site',
-      'sec-ch-ua': '"Not A Brand";v="99","Google Chrome";v="120","Chromium";v="120"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
+      // Client Hints are Chromium-only — Safari never sends them. On iOS the
+      // stored UA is iOS Safari, so advertising Chromium *and* desktop Windows
+      // from an iPhone is a strong bot signal. A 403 here is unrecoverable:
+      // the domain gets added to _blockedDomains for the rest of the session.
+      if (!Platform.isIOS) ...{
+        'sec-ch-ua':
+            '"Not A Brand";v="99","Google Chrome";v="120","Chromium";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+      },
       ...?headers,
     };
 
@@ -103,17 +118,29 @@ class ImageLoader {
   void unblockDomains() => _blockedDomains.clear();
 
   void _addToCache(String url, Uint8List bytes) {
-    if (_cache.length >= _maxCacheSize) {
-      final keysToRemove = _cache.keys.take(_cache.length ~/ 4).toList();
-      for (final key in keysToRemove) {
-        _cache.remove(key);
-      }
-    }
+    // A single oversized page shouldn't be able to evict the whole cache.
+    if (bytes.lengthInBytes > _maxCacheBytes ~/ 4) return;
+
     _cache[url] = bytes;
+    _cacheBytes += bytes.lengthInBytes;
+
+    // Evict oldest-first until BOTH budgets are satisfied. Capping by entry
+    // count alone is what let this grow unbounded: webtoon strips are ~10x the
+    // size of a normal page, so 200 of them is gigabytes of encoded data held
+    // outside Flutter's ImageCache budget. Android merely OOMs; iOS jetsams the
+    // process with no Dart exception, so the app just vanishes mid-chapter.
+    while (_cache.isNotEmpty &&
+        (_cacheBytes > _maxCacheBytes || _cache.length > _maxCacheEntries)) {
+      final oldest = _cache.keys.first;
+      final evicted = _cache.remove(oldest);
+      _cacheBytes -= evicted?.lengthInBytes ?? 0;
+    }
+    if (_cache.isEmpty) _cacheBytes = 0;
   }
 
   void clearCache() {
     _cache.clear();
+    _cacheBytes = 0;
     _blockedDomains.clear();
     _client?.dispose();
     _client = null;
