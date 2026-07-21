@@ -5,6 +5,7 @@ import '../model/filter.dart';
 import '../model/m_manga.dart';
 import '../model/m_pages.dart';
 import '../model/m_source.dart';
+import '../model/m_video.dart';
 import '../model/page_url.dart';
 import '../model/source_preference.dart';
 import '../interface.dart';
@@ -151,6 +152,50 @@ class DartExtensionService implements ExtensionService {
     }).toList();
 
     return pages;
+  }
+
+  @override
+  Future<List<MVideo>> getVideoList(String url) async {
+    final result = await _interpreter!.invoke('getVideoList', [url]) as List;
+    return result.cast<MVideo>();
+  }
+
+  @override
+  Future<List<Map<String, String>>> getCategories() async {
+    try {
+      final result = await _interpreter!.invoke('getCategories', []) as List;
+      return result
+          .whereType<Map>()
+          .map((e) => {
+                'name': (e['name'] ?? '').toString(),
+                'link': (e['link'] ?? e['url'] ?? '').toString(),
+              })
+          .where((c) =>
+              (c['name'] ?? '').isNotEmpty && (c['link'] ?? '').isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  @override
+  Future<MPages> getListing(String listingUrl, int page) async {
+    try {
+      final result = await _interpreter!.invoke('getListing', [listingUrl, page]);
+      return result as MPages;
+    } catch (_) {
+      return MPages(list: const [], hasNextPage: false);
+    }
+  }
+
+  @override
+  Future<String> getHtmlContent(String url) async {
+    try {
+      final result = await _interpreter!.invoke('getHtmlContent', [url]);
+      return result?.toString() ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   @override

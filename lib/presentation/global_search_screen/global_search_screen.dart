@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/installed_source_model.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../eval/lib.dart';
 import '../../eval/model/m_manga.dart';
+import '../../core/utils/search_filter.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/manga_image.dart';
@@ -53,6 +55,19 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       sources = sources.where((s) => !vaultProvider.isSourceInVault(s.source.id)).toList();
     }
 
+    // NSFW filter (Browse settings)
+    if (!sourceProvider.showNsfw) {
+      sources = sources.where((s) => !s.source.isNsfw).toList();
+    }
+
+    // Pinned-only filter for global search (Browse settings).
+    // Reads the same prefs key the Sources tab writes to.
+    if (sourceProvider.pinnedOnlyGlobalSearch) {
+      final prefs = await SharedPreferences.getInstance();
+      final pinned = (prefs.getStringList('pinned_source_ids') ?? []).toSet();
+      sources = sources.where((s) => pinned.contains(s.source.id)).toList();
+    }
+
     setState(() {
       _searching = true;
       _results = {};
@@ -71,9 +86,13 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
         installed.source, installed.sourceCode,
         (service) => service.search(query, 1, []),
       );
-      if (mounted && result.list.isNotEmpty) {
+      // Drop non-matching results — some sources fall back to a popular listing
+      // when their site ignores the query, which would otherwise masquerade as
+      // search hits (mismatched title/cover pairs).
+      final matched = filterSearchResults(result.list, query);
+      if (mounted && matched.isNotEmpty) {
         setState(() {
-          _results[installed.source.id] = result.list.take(6).toList();
+          _results[installed.source.id] = matched.take(6).toList();
         });
       }
     } catch (e) {
@@ -110,11 +129,14 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
             focusNode: _focusNode,
             onSubmitted: _search,
             textInputAction: TextInputAction.search,
+            textAlignVertical: TextAlignVertical.center,
             style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurface),
             decoration: InputDecoration(
+              isDense: true,
               hintText: 'Search across all sources...',
               hintStyle: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
               prefixIcon: Icon(Icons.travel_explore_rounded, size: 18, color: cs.primary),
+              prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               suffixIcon: ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _searchController,
                 builder: (_, val, __) => val.text.isNotEmpty
@@ -123,7 +145,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
                         child: Icon(Icons.close_rounded, size: 16, color: cs.outline))
                     : const SizedBox.shrink()),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 10))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4))),
         ),
         titleSpacing: 0,
         actions: const [SizedBox(width: 8)],
@@ -175,7 +197,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
               .where((s) => s.source.id == entry.key)
               .map((s) => s.source.name)
               .firstOrNull ?? entry.key;
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          return Column(
+            key: ValueKey('src_${entry.key}'),
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
             Padding(padding: const EdgeInsets.fromLTRB(16, 12, 8, 6),
               child: Row(children: [
                 Text(sourceName.toUpperCase(), style: GoogleFonts.manrope(
@@ -202,6 +226,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
               itemBuilder: (_, i) {
                 final manga = entry.value[i];
                 return _MangaCard(
+                  key: ValueKey('${entry.key}_${manga.link ?? i}'),
                   name: manga.name ?? '',
                   coverUrl: manga.imageUrl ?? '',
                   onTap: () => Navigator.pushNamed(context, AppRoutes.mangaDetail, arguments: {
@@ -240,7 +265,7 @@ class _MangaCard extends StatelessWidget {
   final String coverUrl;
   final VoidCallback onTap;
 
-  const _MangaCard({required this.name, required this.coverUrl, required this.onTap});
+  const _MangaCard({super.key, required this.name, required this.coverUrl, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

@@ -36,10 +36,20 @@ class ImageLoader {
     final imageDomain = Uri.tryParse(url)?.host ?? '';
     if (_blockedDomains.contains(imageDomain)) return null;
 
-    // Build headers
+    // Build headers — include Sec-Fetch-* so Cloudflare's bot detection treats
+    // this as a legitimate cross-origin image request from a browser.
+    final refererForSite = headers?['Referer'];
+    final isCrossOrigin = refererForSite != null &&
+        Uri.tryParse(refererForSite)?.host != Uri.tryParse(url)?.host;
     final mergedHeaders = <String, String>{
-      'Accept':
-          'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'sec-fetch-dest': 'image',
+      'sec-fetch-mode': 'no-cors',
+      'sec-fetch-site': isCrossOrigin ? 'cross-site' : 'same-site',
+      'sec-ch-ua': '"Not A Brand";v="99","Google Chrome";v="120","Chromium";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
       ...?headers,
     };
 
@@ -47,16 +57,9 @@ class ImageLoader {
     final storedUA = await CookieStore().getUserAgent();
     mergedHeaders.putIfAbsent('User-Agent', () => storedUA);
 
-    // Add source domain cookies (for CDN hotlink protection)
-    final referer = headers?['Referer'];
-    if (referer != null && referer.isNotEmpty) {
-      final refererCookies = await CookieStore().getCookieHeader(referer);
-      if (refererCookies != null) {
-        mergedHeaders['Cookie'] = refererCookies;
-      }
-    }
-
-    // Also add image domain cookies
+    // Only send cookies that belong to the image domain.
+    // Do NOT send the Referer domain's cookies here — that leaks source-site
+    // session tokens (e.g. missav.ai cookies) to third-party CDNs.
     final imageCookies = await CookieStore().getCookieHeader(url);
     if (imageCookies != null) {
       final existing = mergedHeaders['Cookie'] ?? '';
@@ -84,8 +87,10 @@ class ImageLoader {
       }
 
       if (response.statusCode == 403) {
-        debugPrint(
-            '[ImageLoader] 403 for $url — blocking domain $imageDomain');
+        // Some CDNs (e.g. fourhoi.com) use Cloudflare Managed Challenge which
+        // can't be bypassed by any automated HTTP client. Block immediately so
+        // we don't waste 30 s per page on a bypass that will always fail.
+        debugPrint('[ImageLoader] 403 for $url — blocking domain $imageDomain');
         _blockedDomains.add(imageDomain);
       }
     } catch (e) {

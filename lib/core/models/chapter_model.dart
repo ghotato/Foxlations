@@ -11,6 +11,11 @@ class LibraryChapter extends HiveObject {
   bool isRead;
   int lastPageRead;
   DateTime? readAt;
+  /// Position in the source's chapter list at cache time. Used by
+  /// LibraryService to return cached chapters in the same order the source
+  /// originally returned them, instead of Hive's key insertion order.
+  /// Null for chapters cached before this field existed.
+  int? sourceIndex;
 
   LibraryChapter({
     required this.sourceId,
@@ -23,6 +28,7 @@ class LibraryChapter extends HiveObject {
     this.isRead = false,
     this.lastPageRead = 0,
     this.readAt,
+    this.sourceIndex,
   });
 
   String get uniqueKey => '${sourceId}_$chapterUrl';
@@ -50,13 +56,14 @@ class LibraryChapterAdapter extends TypeAdapter<LibraryChapter> {
       isRead: fields[7] as bool? ?? false,
       lastPageRead: fields[8] as int? ?? 0,
       readAt: fields[9] as DateTime?,
+      sourceIndex: fields[10] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, LibraryChapter obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.sourceId)
       ..writeByte(1)
@@ -76,6 +83,8 @@ class LibraryChapterAdapter extends TypeAdapter<LibraryChapter> {
       ..writeByte(8)
       ..write(obj.lastPageRead)
       ..writeByte(9)
-      ..write(obj.readAt);
+      ..write(obj.readAt)
+      ..writeByte(10)
+      ..write(obj.sourceIndex);
   }
 }

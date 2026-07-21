@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/providers/source_provider.dart';
 import '../../../presentation/webview_screen/webview_screen.dart';
 import '../../../theme/app_theme.dart';
 
@@ -12,10 +14,6 @@ class BrowseSettingsPage extends StatefulWidget {
 }
 
 class _BrowseSettingsPageState extends State<BrowseSettingsPage> {
-  bool _showNsfw = false;
-  bool _pinnedOnly = false;
-  bool _globalSearchPinnedOnly = false;
-  bool _autoUpdateExtensions = true;
   bool _adBlockEnabled = true;
 
   @override
@@ -40,6 +38,7 @@ class _BrowseSettingsPageState extends State<BrowseSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final source = context.watch<SourceProvider>();
 
     return Scaffold(
       backgroundColor: cs.surface,
@@ -69,16 +68,16 @@ class _BrowseSettingsPageState extends State<BrowseSettingsPage> {
             iconColor: AppTheme.error,
             title: 'Show NSFW Sources',
             subtitle: 'Show 18+ sources in browse and search',
-            value: _showNsfw,
-            onChanged: (v) => setState(() => _showNsfw = v),
+            value: source.showNsfw,
+            onChanged: source.setShowNsfw,
           ),
           _SwitchTile(
             icon: Icons.push_pin_rounded,
             iconColor: cs.primary,
             title: 'Pinned Sources Only',
             subtitle: 'Only show pinned sources in browse',
-            value: _pinnedOnly,
-            onChanged: (v) => setState(() => _pinnedOnly = v),
+            value: source.pinnedOnlyBrowse,
+            onChanged: source.setPinnedOnlyBrowse,
           ),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Global Search'),
@@ -87,9 +86,8 @@ class _BrowseSettingsPageState extends State<BrowseSettingsPage> {
             iconColor: cs.primary,
             title: 'Pinned Sources Only',
             subtitle: 'Only search pinned sources in global search',
-            value: _globalSearchPinnedOnly,
-            onChanged: (v) =>
-                setState(() => _globalSearchPinnedOnly = v),
+            value: source.pinnedOnlyGlobalSearch,
+            onChanged: source.setPinnedOnlyGlobalSearch,
           ),
           const SizedBox(height: 8),
           _SectionHeader(title: 'WebView'),
@@ -107,10 +105,9 @@ class _BrowseSettingsPageState extends State<BrowseSettingsPage> {
             icon: Icons.system_update_alt_rounded,
             iconColor: AppTheme.secondary,
             title: 'Auto-Update Extensions',
-            subtitle: 'Automatically update installed extensions',
-            value: _autoUpdateExtensions,
-            onChanged: (v) =>
-                setState(() => _autoUpdateExtensions = v),
+            subtitle: 'Refresh installed extension code on app launch',
+            value: source.autoUpdateExtensions,
+            onChanged: source.setAutoUpdateExtensions,
           ),
           const SizedBox(height: 24),
         ],

@@ -20,6 +20,7 @@ class MangaSource {
   final String notes;
   final String repoUrl; // which repo this came from
   final String repoName; // friendly name of the repo
+  final String itemType; // 'manga' or 'anime'
 
   const MangaSource({
     required this.id,
@@ -41,29 +42,71 @@ class MangaSource {
     this.notes = '',
     this.repoUrl = '',
     this.repoName = '',
+    this.itemType = 'manga',
   });
 
-  factory MangaSource.fromJson(Map<String, dynamic> json, String repoUrl, {String repoName = ''}) {
+  /// Parse a source row from a repo index. Tolerant of two schemas:
+  ///  - Foxlations: `itemType` string, `sourceCodeLanguage` string, `id` string.
+  ///  - Mangayomi/keiyoushi: `itemType` int (0 manga / 1 anime / 2 novel) with an
+  ///    `isManga` bool, `typeSource` (framework), `sourceCodeLanguage` int
+  ///    (0 dart / 1 js), and a numeric `id`.
+  /// [defaultType] is the content type inferred from the index filename (e.g.
+  /// `anime_index.json` → anime), used when a row doesn't state its own type.
+  factory MangaSource.fromJson(Map<String, dynamic> json, String repoUrl,
+      {String repoName = '', String defaultType = 'manga'}) {
+    String asStr(dynamic v, [String def = '']) =>
+        v == null ? def : v.toString();
+    bool asBool(dynamic v) => v is bool
+        ? v
+        : (v is int ? v != 0 : (v is String ? v.toLowerCase() == 'true' : false));
+
+    String parseItemType() {
+      final it = json['itemType'];
+      if (it is int) return it == 1 ? 'anime' : (it == 2 ? 'novel' : 'manga');
+      if (it is String && it.trim().isNotEmpty) {
+        final l = it.trim().toLowerCase();
+        if (l == 'manga' || l == 'anime' || l == 'novel') return l;
+        final n = int.tryParse(l);
+        if (n != null) return n == 1 ? 'anime' : (n == 2 ? 'novel' : 'manga');
+      }
+      // Mangayomi flags anime rows with isManga=false (novels carry itemType=2).
+      final isManga = json['isManga'];
+      if (isManga is bool && !isManga) return 'anime';
+      // Nothing on the row — fall back to the type implied by the index file.
+      return defaultType;
+    }
+
+    String parseSourceLang() {
+      final scl = json['sourceCodeLanguage'];
+      if (scl is int) return scl == 1 ? 'js' : 'dart';
+      if (scl is String && scl.trim().isNotEmpty) {
+        final l = scl.trim().toLowerCase();
+        return l == '1' ? 'js' : (l == '0' ? 'dart' : l);
+      }
+      return 'dart';
+    }
+
     return MangaSource(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Unknown',
-      baseUrl: json['baseUrl'] as String? ?? '',
-      lang: json['lang'] as String? ?? 'en',
-      framework: json['framework'] as String? ?? 'custom',
-      iconUrl: json['iconUrl'] as String? ?? '',
-      sourceCodeUrl: json['sourceCodeUrl'] as String? ?? '',
-      sourceCodeLanguage: json['sourceCodeLanguage'] as String? ?? 'dart',
-      version: json['version'] as String? ?? '0.1.0',
-      isNsfw: json['isNsfw'] as bool? ?? false,
-      hasCloudflare: json['hasCloudflare'] as bool? ?? false,
-      dateFormat: json['dateFormat'] as String? ?? '',
-      dateFormatLocale: json['dateFormatLocale'] as String? ?? '',
-      apiUrl: json['apiUrl'] as String? ?? '',
-      appMinVerReq: json['appMinVerReq'] as String? ?? '0.0.1',
+      id: asStr(json['id']),
+      name: asStr(json['name'], 'Unknown'),
+      baseUrl: asStr(json['baseUrl']),
+      lang: asStr(json['lang'], 'en'),
+      framework: asStr(json['framework'] ?? json['typeSource'], 'custom'),
+      iconUrl: asStr(json['iconUrl']),
+      sourceCodeUrl: asStr(json['sourceCodeUrl']),
+      sourceCodeLanguage: parseSourceLang(),
+      version: asStr(json['version'], '0.1.0'),
+      isNsfw: asBool(json['isNsfw']),
+      hasCloudflare: asBool(json['hasCloudflare']),
+      dateFormat: asStr(json['dateFormat']),
+      dateFormatLocale: asStr(json['dateFormatLocale']),
+      apiUrl: asStr(json['apiUrl']),
+      appMinVerReq: asStr(json['appMinVerReq'], '0.0.1'),
       config: (json['config'] as Map<String, dynamic>?) ?? {},
-      notes: json['notes'] as String? ?? '',
+      notes: asStr(json['notes']),
       repoUrl: repoUrl,
       repoName: repoName,
+      itemType: parseItemType(),
     );
   }
 
@@ -85,10 +128,13 @@ class MangaSource {
         'appMinVerReq': appMinVerReq,
         'config': config,
         'notes': notes,
+        'itemType': itemType,
       };
 
   String get displayName => name;
   bool get hasSourceCode => sourceCodeUrl.isNotEmpty;
   bool get isJsBased => sourceCodeLanguage == 'js' || sourceCodeLanguage == 'javascript';
   bool get isDartBased => sourceCodeLanguage == 'dart';
+  bool get isAnime => itemType == 'anime';
+  bool get isNovel => itemType == 'novel';
 }

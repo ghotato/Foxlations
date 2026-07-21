@@ -1,6 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../theme/app_theme.dart';
+
+/// Security preference keys. Toggling persists the choice — runtime
+/// enforcement (app lock screen, biometric prompt, FLAG_SECURE) requires
+/// platform plugins (local_auth / window flags) which are not yet wired up.
+class SecurityPrefs {
+  static const appLock = 'sec_app_lock';
+  static const biometrics = 'sec_biometrics';
+  static const secureScreen = 'sec_secure_screen';
+  static const hideNotificationContent = 'sec_hide_notif_content';
+}
 
 class SecuritySettingsPage extends StatefulWidget {
   const SecuritySettingsPage({super.key});
@@ -13,6 +24,28 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
   bool _biometrics = false;
   bool _secureScreen = false;
   bool _hideNotificationContent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() {
+      _appLock = p.getBool(SecurityPrefs.appLock) ?? false;
+      _biometrics = p.getBool(SecurityPrefs.biometrics) ?? false;
+      _secureScreen = p.getBool(SecurityPrefs.secureScreen) ?? false;
+      _hideNotificationContent =
+          p.getBool(SecurityPrefs.hideNotificationContent) ?? false;
+    });
+  }
+
+  Future<void> _setBool(String key, bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(key, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,18 +66,30 @@ class _SecuritySettingsPageState extends State<SecuritySettingsPage> {
           _SectionHeader(title: 'App Lock'),
           _SwitchTile(icon: Icons.lock_rounded, iconColor: const Color(0xFF5865F2),
               title: 'App Lock', subtitle: 'Require authentication to open app',
-              value: _appLock, onChanged: (v) => setState(() => _appLock = v)),
+              value: _appLock, onChanged: (v) {
+                setState(() => _appLock = v);
+                _setBool(SecurityPrefs.appLock, v);
+              }),
           _SwitchTile(icon: Icons.fingerprint_rounded, iconColor: const Color(0xFF5865F2),
               title: 'Biometrics', subtitle: 'Use fingerprint or face to unlock',
-              value: _biometrics, onChanged: (v) => setState(() => _biometrics = v)),
+              value: _biometrics, onChanged: (v) {
+                setState(() => _biometrics = v);
+                _setBool(SecurityPrefs.biometrics, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Privacy'),
           _SwitchTile(icon: Icons.visibility_off_rounded, iconColor: AppTheme.warning,
               title: 'Secure Screen', subtitle: 'Hide app content in recent apps',
-              value: _secureScreen, onChanged: (v) => setState(() => _secureScreen = v)),
+              value: _secureScreen, onChanged: (v) {
+                setState(() => _secureScreen = v);
+                _setBool(SecurityPrefs.secureScreen, v);
+              }),
           _SwitchTile(icon: Icons.notifications_off_rounded, iconColor: AppTheme.warning,
               title: 'Hide Notification Content', subtitle: 'Show generic notification text',
-              value: _hideNotificationContent, onChanged: (v) => setState(() => _hideNotificationContent = v)),
+              value: _hideNotificationContent, onChanged: (v) {
+                setState(() => _hideNotificationContent = v);
+                _setBool(SecurityPrefs.hideNotificationContent, v);
+              }),
           const SizedBox(height: 24),
         ],
       ),

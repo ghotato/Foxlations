@@ -3,11 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/manga_model.dart';
 import '../../core/models/installed_source_model.dart';
+import '../../core/utils/search_filter.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../eval/lib.dart';
-import '../../eval/model/m_manga.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/manga_image.dart';
 
@@ -76,9 +76,10 @@ class _MigrateScreenState extends State<MigrateScreen> {
         installed.source, installed.sourceCode,
         (service) => service.search(query, 1, []),
       );
-      if (result.list.isNotEmpty && mounted) {
+      final matched = filterSearchResults(result.list, query);
+      if (matched.isNotEmpty && mounted) {
         setState(() {
-          _results[installed.source.id] = result.list.take(5).map((m) =>
+          _results[installed.source.id] = matched.take(5).map((m) =>
             _SearchResult(
               name: m.name ?? query,
               url: m.link ?? '',

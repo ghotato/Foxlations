@@ -18,9 +18,14 @@ class DocumentBridge {
         'select': (visitor, instance, positionalArgs, namedArgs) {
           return (instance as MDocument).select(positionalArgs[0] as String);
         },
+        'querySelectorAll': (visitor, instance, positionalArgs, namedArgs) {
+          return (instance as MDocument).select(positionalArgs[0] as String);
+        },
         'selectFirst': (visitor, instance, positionalArgs, namedArgs) {
-          return (instance as MDocument)
-              .selectFirst(positionalArgs[0] as String);
+          return (instance as MDocument).selectFirst(positionalArgs[0] as String);
+        },
+        'querySelector': (visitor, instance, positionalArgs, namedArgs) {
+          return (instance as MDocument).selectFirst(positionalArgs[0] as String);
         },
       },
       getters: {
@@ -126,9 +131,14 @@ class ElementBridge {
         'select': (visitor, instance, positionalArgs, namedArgs) {
           return (instance as MElement).select(positionalArgs[0] as String);
         },
+        'querySelectorAll': (visitor, instance, positionalArgs, namedArgs) {
+          return (instance as MElement).select(positionalArgs[0] as String);
+        },
         'selectFirst': (visitor, instance, positionalArgs, namedArgs) {
-          return (instance as MElement)
-              .selectFirst(positionalArgs[0] as String);
+          return (instance as MElement).selectFirst(positionalArgs[0] as String);
+        },
+        'querySelector': (visitor, instance, positionalArgs, namedArgs) {
+          return (instance as MElement).selectFirst(positionalArgs[0] as String);
         },
         'hasAttr': (visitor, instance, positionalArgs, namedArgs) {
           return (instance as MElement).hasAttr(positionalArgs[0] as String);

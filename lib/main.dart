@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'core/models/manga_model.dart';
@@ -9,10 +10,13 @@ import 'package:rhttp/rhttp.dart';
 import 'core/services/webview_service.dart';
 import 'core/providers/source_provider.dart';
 import 'core/providers/library_provider.dart';
+import 'core/providers/tracking_provider.dart';
 import 'core/providers/vault_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/providers/download_provider.dart';
 import 'core/services/library_update_service.dart';
+import 'core/services/backup_service.dart';
+import 'core/services/app_navigator.dart';
 import 'theme/app_theme.dart';
 import 'routes/app_routes.dart';
 import 'widgets/app_navigation.dart';
@@ -23,6 +27,7 @@ import 'presentation/browse_screen/browse_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   await Hive.initFlutter();
   Hive.registerAdapter(LibraryMangaAdapter());
   Hive.registerAdapter(LibraryChapterAdapter());
@@ -46,6 +51,7 @@ class MangaReaderApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => SourceProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => LibraryProvider()..initialize()),
+        ChangeNotifierProvider(create: (_) => TrackingProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => VaultProvider()..initialize()),
         ChangeNotifierProvider(create: (ctx) {
           final dp = DownloadProvider()..initialize();
@@ -59,7 +65,8 @@ class MangaReaderApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (_, themeProvider, __) {
           return MaterialApp(
-            title: 'Manga Reader',
+            title: 'Foxlations',
+            navigatorKey: rootNavigatorKey,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme(
                 primaryColor: themeProvider.primaryColor(Brightness.light)),
@@ -68,6 +75,21 @@ class MangaReaderApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             home: const AppShell(),
             onGenerateRoute: AppRoutes.onGenerateRoute,
+            // Wrap the entire app in a ColorFiltered when invert colors is
+            // enabled in Appearance settings. The matrix is the standard
+            // RGB invert; alpha is preserved.
+            builder: (context, child) {
+              if (!themeProvider.invertColors || child == null) return child ?? const SizedBox.shrink();
+              return ColorFiltered(
+                colorFilter: const ColorFilter.matrix([
+                  -1,  0,  0, 0, 255,
+                   0, -1,  0, 0, 255,
+                   0,  0, -1, 0, 255,
+                   0,  0,  0, 1,   0,
+                ]),
+                child: child,
+              );
+            },
           );
         },
       ),
@@ -99,6 +121,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadUpdatesBadge();
+    // Run any due automatic backup once the library boxes have opened.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(seconds: 4));
+      try {
+        await BackupService().maybeRunAuto();
+      } catch (_) {}
+    });
   }
 
   void _showVaultPasswordDialog(VaultProvider vault) {

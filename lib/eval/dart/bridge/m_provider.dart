@@ -32,6 +32,8 @@ class MProviderBridge {
             (target as MProvider).getDetail(positionalArgs[0] as String),
         'getPageList': (visitor, target, positionalArgs, namedArgs) =>
             (target as MProvider).getPageList(positionalArgs[0] as String),
+        'getVideoList': (visitor, target, positionalArgs, namedArgs) =>
+            (target as MProvider).getVideoList(positionalArgs[0] as String),
         'getFilterList': (visitor, target, positionalArgs, namedArgs) =>
             (target as MProvider).getFilterList(),
         'getSourcePreferences': (visitor, target, positionalArgs, namedArgs) =>
@@ -137,10 +139,13 @@ class MProviderUtilities {
       sourceUri: lib,
     );
 
-    // print
+    // print — forward extension print() calls to Flutter's debugPrint with
+    // an [Ext] tag so source authors can trace runtime behavior.
     interpreter.registertopLevelFunction(
       'print',
       (visitor, positionalArgs, namedArgs, typeArgs) {
+        final msg = positionalArgs.isEmpty ? '' : positionalArgs[0]?.toString() ?? '';
+        debugPrint('[Ext] $msg');
         return null;
       },
       sourceUri: lib,

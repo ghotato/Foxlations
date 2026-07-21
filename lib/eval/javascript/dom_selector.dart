@@ -50,21 +50,25 @@ class JsDomSelector {
     });
 
     _runtime.evaluate('''
+// NOTE: select/selectFirst are SYNCHRONOUS to match the Mangayomi JS contract
+// (sources iterate `for (const el of doc.select(...))` without await). QuickJS
+// `sendMessage` resolves synchronously, so this works; existing sources that
+// `await doc.select(...)` still work (await on a non-Promise is a no-op).
 class Document {
   constructor(html) {
     this._html = html;
   }
 
-  async select(selector) {
-    const result = await sendMessage('ParseHtml', JSON.stringify({
+  select(selector) {
+    const result = sendMessage('ParseHtml', JSON.stringify({
       html: this._html,
       selector: selector
     }));
     return JSON.parse(result).map(el => new Element(el, this._html));
   }
 
-  async selectFirst(selector) {
-    const result = await sendMessage('ParseHtmlFirst', JSON.stringify({
+  selectFirst(selector) {
+    const result = sendMessage('ParseHtmlFirst', JSON.stringify({
       html: this._html,
       selector: selector
     }));
@@ -91,9 +95,16 @@ class Element {
     return this._data.attributes ? this._data.attributes[name] : null;
   }
 
-  getSrc() {
+  // getSrc / getHref are GETTERS (property access, no parens) per the Mangayomi
+  // contract — sources use `el.getSrc` / `a.getHref`.
+  get getSrc() {
     const attrs = this._data.attributes || {};
-    return attrs['data-src'] || attrs['data-lazy-src'] || this._extractSrcSet(attrs) || attrs['src'];
+    return attrs['data-src'] || attrs['data-lazy-src'] || this._extractSrcSet(attrs) || attrs['src'] || '';
+  }
+
+  get getHref() {
+    const attrs = this._data.attributes || {};
+    return attrs['href'] || attrs['data-href'] || '';
   }
 
   _extractSrcSet(attrs) {
@@ -106,16 +117,16 @@ class Element {
     return this._data.attributes ? name in this._data.attributes : false;
   }
 
-  async select(selector) {
-    const result = await sendMessage('ParseHtml', JSON.stringify({
+  select(selector) {
+    const result = sendMessage('ParseHtml', JSON.stringify({
       html: this._data.outerHtml || '',
       selector: selector
     }));
     return JSON.parse(result).map(el => new Element(el, this._data.outerHtml));
   }
 
-  async selectFirst(selector) {
-    const result = await sendMessage('ParseHtmlFirst', JSON.stringify({
+  selectFirst(selector) {
+    const result = sendMessage('ParseHtmlFirst', JSON.stringify({
       html: this._data.outerHtml || '',
       selector: selector
     }));

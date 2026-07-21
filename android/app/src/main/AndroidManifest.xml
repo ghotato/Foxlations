@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:usesCleartextTraffic="true"
-        android:label="manga_reader"
+        android:label="Foxlations"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

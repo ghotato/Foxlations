@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/manga_model.dart';
 import '../widgets/manga_image.dart';
 import '../../core/providers/library_provider.dart';
@@ -11,6 +12,11 @@ import '../../core/services/library_update_service.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
 import './widgets/library_stats_widget.dart';
+
+/// SharedPreferences key for the persisted set of `${sourceId}::${mangaUrl}`
+/// strings the user has bookmarked at the manga level. Read by reader_screen
+/// to honor the "Include Bookmarked Chapters" download setting.
+const String kBookmarkedMangaIdsKey = 'bookmarked_manga_ids';
 
 // Safely extract origin from a URL, returning null for relative paths.
 String? _originOf(String? url) {
@@ -82,6 +88,29 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadBookmarks();
+  }
+
+  Future<void> _loadBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ids = prefs.getStringList(kBookmarkedMangaIdsKey) ?? [];
+    if (mounted) {
+      setState(() {
+        _bookmarkedIds
+          ..clear()
+          ..addAll(ids);
+      });
+    }
+  }
+
+  Future<void> _saveBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(kBookmarkedMangaIdsKey, _bookmarkedIds.toList());
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
@@ -136,6 +165,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         _bookmarkedIds.add(key);
       }
     });
+    _saveBookmarks();
   }
 
   // Multi-select helpers
@@ -455,8 +485,13 @@ class _LibraryScreenState extends State<LibraryScreen>
                         final cats = vault.vaultActive
                             ? vault.categories.map((c) => c.name).toList()
                             : library.categories.map((c) => c.name).toList();
-                        // Auto-select first category if none selected
-                        if (_selectedCategory == null && cats.isNotEmpty) {
+                        // Auto-select first category if none selected, or if
+                        // the current selection isn't valid in the active mode
+                        // (e.g. after toggling vault, the previous mode's
+                        // category names don't exist in the new list).
+                        if (cats.isNotEmpty &&
+                            (_selectedCategory == null ||
+                                !cats.contains(_selectedCategory))) {
                           _selectedCategory = cats.first;
                         }
                         return _CategoryTabs(
@@ -697,9 +732,13 @@ class _TitleRow extends StatelessWidget {
           Icon(Icons.shield_rounded, size: 18, color: cs.primary),
           const SizedBox(width: 6),
         ],
-        Text(isVaultMode ? 'Vault' : 'Library',
-            style: GoogleFonts.manrope(
-                fontSize: 20, fontWeight: FontWeight.w800, color: cs.onSurface)),
+        Flexible(
+          child: Text(isVaultMode ? 'Vault' : 'Library',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.manrope(
+                  fontSize: 20, fontWeight: FontWeight.w800, color: cs.onSurface)),
+        ),
         if (totalUnread > 0) ...[
           const SizedBox(width: 8),
           Container(

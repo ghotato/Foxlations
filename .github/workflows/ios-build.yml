@@ -1,0 +1,82 @@
+name: iOS build → server
+
+# Builds an UNSIGNED iOS .ipa on a macOS runner and delivers it to your server
+# over Tailscale (scp) into builds/build-NNN/ — no GitHub Release, nothing stored
+# on GitHub. Triggered by the local orchestrator (scripts/release.sh) via:
+#   gh workflow run ios-build.yml -f build_number=<N> -f version=<A.B.C+N>
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number N (target folder builds/build-NNN)'
+        required: true
+      version:
+        description: 'Version string, e.g. 0.0.26+20'
+        required: true
+
+# Pin to your local Flutter. If the runner can't fetch this exact version,
+# change it to the nearest public stable (Dart constraint is ^3.11.3).
+env:
+  FLUTTER_VERSION: '3.44.6'
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # rhttp (Rust) is compiled from source for the iOS target.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Build unsigned iOS app
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        id: pkg
+        run: |
+          NNN=$(printf '%03d' "${{ inputs.build_number }}")
+          echo "nnn=$NNN" >> "$GITHUB_OUTPUT"
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          IPA="foxlations-${{ inputs.version }}.ipa"
+          zip -qq -r "$IPA" Payload
+          echo "ipa=$PWD/$IPA" >> "$GITHUB_OUTPUT"
+
+      # Join your tailnet (ephemeral node, auto-removed after the run).
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE }}
+          # If you switch to an OAuth client instead of an auth key, replace the
+          # line above with:
+          #   oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          #   oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          #   tags: tag:ci
+
+      - name: Deliver IPA to server
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER_NAME: ${{ secrets.SERVER_USER }}
+          BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          chmod 600 ~/.ssh/id_ci
+          DEST="${BUILDS_PATH%/}/build-${{ steps.pkg.outputs.nnn }}"
+          ssh -i ~/.ssh/id_ci -o StrictHostKeyChecking=accept-new \
+            "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
+          scp -i ~/.ssh/id_ci -o StrictHostKeyChecking=accept-new \
+            "${{ steps.pkg.outputs.ipa }}" "${USER_NAME}@${HOST}:${DEST}/"
+          echo "Delivered IPA to ${USER_NAME}@${HOST}:${DEST}/"

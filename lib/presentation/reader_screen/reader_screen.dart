@@ -8,12 +8,16 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/reader_provider.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/tracking_provider.dart';
+import '../../core/providers/download_provider.dart';
+import '../library_screen/library_screen.dart' show kBookmarkedMangaIdsKey;
 import '../../eval/model/page_url.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/manga_image.dart';
 import 'widgets/reader_translation_provider_sheet.dart';
 import 'widgets/reader_translation_overlay.dart';
 import '../../core/services/ai_translation_service.dart';
+import '../../core/services/koharu_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ReaderScreen extends StatelessWidget {
@@ -104,14 +108,20 @@ class _ReaderBodyState extends State<_ReaderBody>
   bool _isTranslationActive = false;
   bool _isTranslating = false;
   String _selectedProviderName = 'Claude';
+  String _selectedProviderId = 'gemini';
   List<TranslationBubble> _translationBubbles = [];
   final _translationService = AiTranslationService();
+  final _koharuService = KoharuService();
+  final Map<int, Uint8List> _koharuImageCache = {};
   late final AnimationController _translationAnimController;
   late final Animation<double> _translationAnimation;
 
   @override
   void initState() {
     super.initState();
+    // Default to immersive; the actual mode is reapplied from ReaderSettings
+    // once the provider has finished loading prefs (see post-frame callback
+    // below).
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _hudController = AnimationController(
       duration: AppTheme.standard,
@@ -160,9 +170,11 @@ class _ReaderBodyState extends State<_ReaderBody>
       _updateProgress(reader, page);
     }
 
-    // Trigger next chapter when user scrolls to end card
+    // Trigger next chapter when user scrolls to end card (only when
+    // auto-preload is enabled in Reader settings).
     final lastVisible = positions.reduce((a, b) => a.index > b.index ? a : b);
-    if (lastVisible.index >= reader.totalPages &&
+    if (reader.settings.autoPreload &&
+        lastVisible.index >= reader.totalPages &&
         !reader.isLoadingNext &&
         !reader.isLastChapter &&
         !reader.nextChapterError) {
@@ -212,8 +224,13 @@ class _ReaderBodyState extends State<_ReaderBody>
             if (mounted) setState(() => _sliderPage = reader.currentPage);
           });
         }
+        // Apply fullscreen pref. Re-issued each build so toggling settings
+        // mid-session takes effect on the next rebuild.
+        SystemChrome.setEnabledSystemUIMode(reader.settings.fullscreen
+            ? SystemUiMode.immersiveSticky
+            : SystemUiMode.edgeToEdge);
         return Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor: _bgColorFor(reader.settings.bgColor, context),
           body: Stack(
             children: [
               // Page content
@@ -289,6 +306,31 @@ class _ReaderBodyState extends State<_ReaderBody>
   Widget _buildPagedReader(BuildContext context, ReaderProvider reader) {
     _pageController ??= PageController(initialPage: reader.currentPage);
     final screenWidth = MediaQuery.of(context).size.width;
+    final s = reader.settings;
+    final fit = _boxFitFor(s.scaleType);
+    final filter = _imageColorFilter(s);
+
+    void goPrev() {
+      if (reader.currentPage > 0) {
+        _pageController?.previousPage(
+          duration: AppTheme.standard,
+          curve: AppTheme.primaryCurve,
+        );
+      } else if (reader.hasPreviousChapter) {
+        reader.goToPreviousChapter();
+      }
+    }
+
+    void goNext() {
+      if (reader.currentPage < reader.totalPages - 1) {
+        _pageController?.nextPage(
+          duration: AppTheme.standard,
+          curve: AppTheme.primaryCurve,
+        );
+      } else if (reader.hasNextChapter) {
+        reader.goToNextChapter();
+      }
+    }
 
     return Stack(
       children: [
@@ -300,68 +342,87 @@ class _ReaderBodyState extends State<_ReaderBody>
             reader.setPage(page);
             setState(() => _sliderPage = page);
             _updateProgress(reader, page);
+            // Auto-preload next chapter when within last 2 pages.
+            if (s.autoPreload &&
+                !reader.isLoadingNext &&
+                !reader.isLastChapter &&
+                page >= reader.totalPages - 2) {
+              reader.loadNextChapter();
+            }
           },
           itemBuilder: (_, i) {
             final pageUrl = reader.pages[i];
+            Widget image = MangaImage(
+              imageUrl: pageUrl.url,
+              referer: pageUrl.headers?['Referer'],
+              fit: fit,
+              width: double.infinity,
+              height: double.infinity,
+              translatedBytes: _isTranslationActive ? _koharuImageCache[i] : null,
+              placeholder: const Center(
+                child: CircularProgressIndicator(color: Colors.white54),
+              ),
+              errorWidget: const Center(
+                child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+              ),
+            );
+            if (filter != null) {
+              image = ColorFiltered(colorFilter: filter, child: image);
+            }
             return InteractiveViewer(
               minScale: 1.0,
               maxScale: 4.0,
-              child: MangaImage(
-                imageUrl: pageUrl.url,
-                referer: pageUrl.headers?['Referer'],
-                fit: BoxFit.contain,
-                width: double.infinity,
-                height: double.infinity,
-                placeholder: const Center(
-                  child: CircularProgressIndicator(color: Colors.white54),
-                ),
-                errorWidget: const Center(
-                  child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
-                ),
-              ),
+              child: image,
             );
           },
         ),
-        // Tap zones: left 25% = prev, center 50% = toggle HUD, right 25% = next
-        Row(
-          children: [
-            // Left tap zone
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                if (reader.currentPage > 0) {
-                  _pageController?.previousPage(
-                    duration: AppTheme.standard,
-                    curve: AppTheme.primaryCurve,
-                  );
-                } else if (reader.hasPreviousChapter) {
-                  reader.goToPreviousChapter();
-                }
-              },
-              child: SizedBox(width: screenWidth * 0.25, height: double.infinity),
-            ),
-            // Center tap zone
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () => _toggleHud(reader),
-              child: SizedBox(width: screenWidth * 0.5, height: double.infinity),
-            ),
-            // Right tap zone
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                if (reader.currentPage < reader.totalPages - 1) {
-                  _pageController?.nextPage(
-                    duration: AppTheme.standard,
-                    curve: AppTheme.primaryCurve,
-                  );
-                } else if (reader.hasNextChapter) {
-                  reader.goToNextChapter();
-                }
-              },
-              child: SizedBox(width: screenWidth * 0.25, height: double.infinity),
-            ),
-          ],
+        // Tap zones — layout/inversion driven by Reader settings.
+        if (s.navLayout != 'Disabled')
+          _buildTapZones(
+            screenWidth: screenWidth,
+            navLayout: s.navLayout,
+            inverted: s.invertTapZones,
+            onPrev: goPrev,
+            onNext: goNext,
+            onCenter: () => _toggleHud(reader),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTapZones({
+    required double screenWidth,
+    required String navLayout,
+    required bool inverted,
+    required VoidCallback onPrev,
+    required VoidCallback onNext,
+    required VoidCallback onCenter,
+  }) {
+    // Edge layout = thinner side zones (15% each), bigger center.
+    final sideFraction = navLayout == 'Edge' ? 0.15 : 0.25;
+    final centerFraction = 1.0 - 2 * sideFraction;
+    final leftAction = inverted ? onNext : onPrev;
+    final rightAction = inverted ? onPrev : onNext;
+
+    return Row(
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: leftAction,
+          child: SizedBox(
+              width: screenWidth * sideFraction, height: double.infinity),
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: onCenter,
+          child: SizedBox(
+              width: screenWidth * centerFraction, height: double.infinity),
+        ),
+        GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: rightAction,
+          child: SizedBox(
+              width: screenWidth * sideFraction, height: double.infinity),
         ),
       ],
     );
@@ -413,25 +474,30 @@ class _ReaderBodyState extends State<_ReaderBody>
             return Column(
               children: [
                 _buildChapterTransition(context, boundary),
-                _buildPageImage(reader.pages[i]),
+                _buildPageImage(reader.pages[i], i),
               ],
             );
           }
 
           return GestureDetector(
             onTap: () => _toggleHud(reader),
-            child: _buildPageImage(reader.pages[i]),
+            child: _buildPageImage(reader.pages[i], i),
           );
         },
     );
   }
 
 
-  Widget _buildPageImage(PageUrl pageUrl) {
+  Widget _buildPageImage(PageUrl pageUrl, int index) {
+    final reader = context.read<ReaderProvider>();
+    final filter = _imageColorFilter(reader.settings);
+    final translatedBytes = _isTranslationActive ? _koharuImageCache[index] : null;
+
+    Widget image;
     // Local file (downloaded chapter)
     if (pageUrl.url.startsWith('file://')) {
       final path = pageUrl.url.replaceFirst('file://', '');
-      return Image.file(
+      image = Image.file(
         File(path),
         fit: BoxFit.fitWidth,
         width: double.infinity,
@@ -440,22 +506,27 @@ class _ReaderBodyState extends State<_ReaderBody>
           child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
         ),
       );
+    } else {
+      image = MangaImage(
+        imageUrl: pageUrl.url,
+        referer: pageUrl.headers?['Referer'],
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
+        translatedBytes: translatedBytes,
+        placeholder: const SizedBox(
+          height: 400,
+          child: Center(child: CircularProgressIndicator(color: Colors.white54)),
+        ),
+        errorWidget: const SizedBox(
+          height: 400,
+          child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
+        ),
+      );
     }
-    // Remote image
-    return MangaImage(
-      imageUrl: pageUrl.url,
-      referer: pageUrl.headers?['Referer'],
-      fit: BoxFit.fitWidth,
-      width: double.infinity,
-      placeholder: const SizedBox(
-        height: 400,
-        child: Center(child: CircularProgressIndicator(color: Colors.white54)),
-      ),
-      errorWidget: const SizedBox(
-        height: 400,
-        child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
-      ),
-    );
+    if (filter != null) {
+      image = ColorFiltered(colorFilter: filter, child: image);
+    }
+    return image;
   }
 
   Widget _buildChapterTransition(BuildContext context, ChapterBoundary boundary) {
@@ -580,7 +651,7 @@ class _ReaderBodyState extends State<_ReaderBody>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.manrope(
-                    fontSize: 14,
+                    fontSize: reader.settings.fontSize * 0.875,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
                     shadows: const [Shadow(color: Colors.black54, blurRadius: 4)],
@@ -592,7 +663,7 @@ class _ReaderBodyState extends State<_ReaderBody>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.manrope(
-                      fontSize: 11,
+                      fontSize: reader.settings.fontSize * 0.6875,
                       fontWeight: FontWeight.w500,
                       color: Colors.white70,
                     ),
@@ -632,14 +703,15 @@ class _ReaderBodyState extends State<_ReaderBody>
           if (reader.totalPages > 0)
             Row(
               children: [
-                Text(
-                  '${_sliderPage + 1}',
-                  style: GoogleFonts.manrope(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                if (reader.settings.showPageNumber)
+                  Text(
+                    '${_sliderPage + 1}',
+                    style: GoogleFonts.manrope(
+                      fontSize: reader.settings.fontSize * 0.75,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
                 Expanded(
                   child: SliderTheme(
                     data: SliderThemeData(
@@ -669,14 +741,15 @@ class _ReaderBodyState extends State<_ReaderBody>
                     ),
                   ),
                 ),
-                Text(
-                  '${reader.totalPages}',
-                  style: GoogleFonts.manrope(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white70,
+                if (reader.settings.showPageNumber)
+                  Text(
+                    '${reader.totalPages}',
+                    style: GoogleFonts.manrope(
+                      fontSize: reader.settings.fontSize * 0.75,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white70,
+                    ),
                   ),
-                ),
               ],
             ),
           const SizedBox(height: 8),
@@ -690,6 +763,7 @@ class _ReaderBodyState extends State<_ReaderBody>
                     _isTranslationActive = !_isTranslationActive;
                     if (!_isTranslationActive) {
                       _translationBubbles = [];
+                      _koharuImageCache.clear();
                       _translationAnimController.reset();
                     } else {
                       _translateCurrentPage(reader);
@@ -787,7 +861,8 @@ class _ReaderBodyState extends State<_ReaderBody>
     setState(() { _isTranslating = true; _translationBubbles = []; });
 
     try {
-      final page = reader.pages[reader.currentPage];
+      final pageIndex = reader.currentPage;
+      final page = reader.pages[pageIndex];
       Uint8List? imageBytes;
 
       if (page.url.startsWith('file://')) {
@@ -805,7 +880,24 @@ class _ReaderBodyState extends State<_ReaderBody>
         }
       }
 
-      final cacheKey = '${widget.sourceId}_${reader.currentPage}';
+      if (_selectedProviderId == 'koharu') {
+        final prefs = await SharedPreferences.getInstance();
+        final targetLang = prefs.getString('ai_target_language') ?? 'en';
+        final translated = await _koharuService.translatePage(
+          imageBytes,
+          targetLang: targetLang,
+          translator: 'google',
+        );
+        if (mounted) {
+          setState(() {
+            _koharuImageCache[pageIndex] = translated;
+            _isTranslating = false;
+          });
+        }
+        return;
+      }
+
+      final cacheKey = '${widget.sourceId}_$pageIndex';
       final result = await _translationService.translatePage(imageBytes, cacheKey: cacheKey);
 
       if (mounted) {
@@ -834,7 +926,8 @@ class _ReaderBodyState extends State<_ReaderBody>
     final name = await ReaderTranslationProviderSheet.getProviderName();
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool('ai_translation_enabled') ?? true;
-    if (mounted) setState(() { _selectedProviderName = name; _translationEnabled = enabled; });
+    final id = prefs.getString('ai_provider') ?? 'gemini';
+    if (mounted) setState(() { _selectedProviderName = name; _translationEnabled = enabled; _selectedProviderId = id; });
   }
 
   void _showProviderSheet(BuildContext context) {
@@ -957,6 +1050,24 @@ class _ReaderBodyState extends State<_ReaderBody>
         reader.currentChapterUrl,
         page,
       );
+      // Download Ahead While Reading: once the user is committed to a
+      // chapter (~30% in), queue the next chapter for download. The
+      // DownloadProvider deduplicates against in-flight + already downloaded.
+      final dl = context.read<DownloadProvider>();
+      if (dl.downloadWhileReading &&
+          reader.totalPages > 0 &&
+          page >= (reader.totalPages * 0.3).floor()) {
+        final next = reader.nextChapterInfo;
+        if (next != null && next['url']!.isNotEmpty) {
+          dl.enqueueChapter(
+            sourceId: widget.sourceId,
+            mangaUrl: widget.mangaUrl!,
+            mangaTitle: widget.mangaTitle ?? '',
+            chapterUrl: next['url']!,
+            chapterName: next['name'] ?? '',
+          );
+        }
+      }
       // Mark chapter as read when reaching the last page
       if (page >= reader.totalPages - 1) {
         libraryProvider.markChapterRead(
@@ -964,8 +1075,175 @@ class _ReaderBodyState extends State<_ReaderBody>
           widget.mangaUrl!,
           reader.currentChapterUrl,
         );
+        _syncTracking(reader);
+        _applyAutoDeleteRules(reader, dl);
       }
     } catch (_) {}
+  }
+
+  /// Push the just-read chapter's number to any connected trackers bound to
+  /// this manga. Fire-and-forget; never interrupts reading.
+  void _syncTracking(ReaderProvider reader) {
+    if (widget.mangaUrl == null) return;
+    try {
+      final name = reader.currentChapterName.isNotEmpty
+          ? reader.currentChapterName
+          : (widget.chapterTitle ?? '');
+      final n = _chapterNumberOf(name);
+      if (n <= 0) return;
+      context
+          .read<TrackingProvider>()
+          .syncChapterRead('${widget.sourceId}_${widget.mangaUrl}', n);
+    } catch (_) {}
+  }
+
+  /// Best-effort parse of a chapter number from its title (e.g. "Chapter 45.5"
+  /// -> 45). Prefers a number after chapter/ch/ep, else the last number found.
+  int _chapterNumberOf(String name) {
+    final labeled = RegExp(
+            r'(?:chapter|chap|ch|episode|ep|#)\s*[.:]?\s*(\d+(?:\.\d+)?)',
+            caseSensitive: false)
+        .firstMatch(name);
+    String? numStr = labeled?.group(1);
+    if (numStr == null) {
+      final all = RegExp(r'\d+(?:\.\d+)?').allMatches(name).toList();
+      if (all.isNotEmpty) numStr = all.last.group(0);
+    }
+    if (numStr == null) return 0;
+    return (double.tryParse(numStr) ?? 0).floor();
+  }
+
+  /// Honors `Delete After Reading`, `Auto-Delete Read Chapters`, and
+  /// `Include Bookmarked Chapters` from the Downloads settings page. Called
+  /// once the current chapter has been marked as read.
+  Future<void> _applyAutoDeleteRules(
+      ReaderProvider reader, DownloadProvider dl) async {
+    if (widget.mangaUrl == null || (widget.mangaTitle ?? '').isEmpty) return;
+    final mangaTitle = widget.mangaTitle!;
+
+    // If this manga is bookmarked and the user hasn't opted into deleting
+    // bookmarked chapters, skip both delete rules entirely.
+    if (!dl.removeBookmarked) {
+      final prefs = await SharedPreferences.getInstance();
+      final bookmarks =
+          (prefs.getStringList(kBookmarkedMangaIdsKey) ?? []).toSet();
+      final mangaKey = '${widget.sourceId}::${widget.mangaUrl}';
+      if (bookmarks.contains(mangaKey)) return;
+    }
+
+    // 1) Delete the just-read chapter outright if the user opted in.
+    if (dl.deleteAfterRead) {
+      final currentName = _safeChapterName(reader, reader.currentChapterIndex);
+      if (currentName.isNotEmpty &&
+          dl.isDownloaded(widget.sourceId, reader.currentChapterUrl)) {
+        await dl.deleteDownload(
+          widget.sourceId,
+          mangaTitle,
+          currentName,
+          reader.currentChapterUrl,
+        );
+      }
+    }
+
+    // 2) Auto-delete the chapter that's `threshold` positions back, keeping
+    //    a sliding window of the most recent reads on disk.
+    final threshold = dl.autoDeleteThreshold;
+    if (threshold > 0) {
+      final old = reader.chapterAtOffset(threshold);
+      if (old != null && old['url']!.isNotEmpty) {
+        if (dl.isDownloaded(widget.sourceId, old['url']!)) {
+          await dl.deleteDownload(
+            widget.sourceId,
+            mangaTitle,
+            old['name'] ?? '',
+            old['url']!,
+          );
+        }
+      }
+    }
+  }
+
+  String _safeChapterName(ReaderProvider reader, int idx) {
+    if (idx < 0 || idx >= reader.chaptersCount) return '';
+    return reader.chapterAtOffset(reader.currentChapterIndex - idx)?['name'] ?? '';
+  }
+
+  // ── Settings helpers ──────────────────────────────────────────────────
+
+  Color _bgColorFor(String name, BuildContext context) {
+    switch (name) {
+      case 'White':
+        return Colors.white;
+      case 'Gray':
+        return const Color(0xFF1A1A1A);
+      case 'Automatic':
+        return Theme.of(context).brightness == Brightness.dark
+            ? Colors.black
+            : Colors.white;
+      case 'Black':
+      default:
+        return Colors.black;
+    }
+  }
+
+  BoxFit _boxFitFor(String name) {
+    switch (name) {
+      case 'Stretch':
+        return BoxFit.fill;
+      case 'Fit Width':
+        return BoxFit.fitWidth;
+      case 'Fit Height':
+        return BoxFit.fitHeight;
+      case 'Original Size':
+        return BoxFit.none;
+      case 'Smart Fit':
+        return BoxFit.contain;
+      case 'Fit Screen':
+      default:
+        return BoxFit.contain;
+    }
+  }
+
+  /// Returns a ColorFilter that applies grayscale and/or invert as configured,
+  /// or null if neither is enabled.
+  ColorFilter? _imageColorFilter(ReaderSettings s) {
+    final filters = <List<double>>[];
+    if (s.grayscale) {
+      filters.add(const [
+        0.2126, 0.7152, 0.0722, 0, 0,
+        0.2126, 0.7152, 0.0722, 0, 0,
+        0.2126, 0.7152, 0.0722, 0, 0,
+        0,      0,      0,      1, 0,
+      ]);
+    }
+    if (s.invertColors) {
+      filters.add(const [
+        -1, 0, 0, 0, 255,
+        0, -1, 0, 0, 255,
+        0, 0, -1, 0, 255,
+        0, 0, 0, 1, 0,
+      ]);
+    }
+    if (filters.isEmpty) return null;
+    if (filters.length == 1) return ColorFilter.matrix(filters.first);
+    // Compose: invert ∘ grayscale (apply grayscale first, then invert)
+    return ColorFilter.matrix(_composeMatrices(filters[0], filters[1]));
+  }
+
+  /// 4x5 color matrix multiplication (b applied after a).
+  List<double> _composeMatrices(List<double> a, List<double> b) {
+    final out = List<double>.filled(20, 0);
+    for (var row = 0; row < 4; row++) {
+      for (var col = 0; col < 5; col++) {
+        var sum = 0.0;
+        for (var k = 0; k < 4; k++) {
+          sum += b[row * 5 + k] * a[k * 5 + col];
+        }
+        if (col == 4) sum += b[row * 5 + 4];
+        out[row * 5 + col] = sum;
+      }
+    }
+    return out;
   }
 
   String _modeLabel(ReadingMode mode) => switch (mode) {

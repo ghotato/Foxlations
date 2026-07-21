@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../theme/app_theme.dart';
+
+/// Notification preference keys. Toggling these only persists the user's
+/// choice — actual delivery requires the flutter_local_notifications plugin
+/// (not yet wired up).
+class NotificationPrefs {
+  static const newChapters = 'notif_new_chapters';
+  static const libraryUpdate = 'notif_library_update';
+  static const downloadComplete = 'notif_download_complete';
+  static const downloadError = 'notif_download_error';
+  static const sound = 'notif_sound';
+  static const vibration = 'notif_vibration';
+  static const groupNotifications = 'notif_group';
+}
 
 class NotificationsSettingsPage extends StatefulWidget {
   const NotificationsSettingsPage({super.key});
@@ -17,6 +31,30 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
   bool _sound = true;
   bool _vibration = true;
   bool _groupNotifications = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() {
+      _newChapters = p.getBool(NotificationPrefs.newChapters) ?? true;
+      _libraryUpdate = p.getBool(NotificationPrefs.libraryUpdate) ?? false;
+      _downloadComplete = p.getBool(NotificationPrefs.downloadComplete) ?? true;
+      _downloadError = p.getBool(NotificationPrefs.downloadError) ?? true;
+      _sound = p.getBool(NotificationPrefs.sound) ?? true;
+      _vibration = p.getBool(NotificationPrefs.vibration) ?? true;
+      _groupNotifications = p.getBool(NotificationPrefs.groupNotifications) ?? true;
+    });
+  }
+
+  Future<void> _setBool(String key, bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(key, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,29 +75,50 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
           _SectionHeader(title: 'Chapter Updates'),
           _SwitchTile(icon: Icons.new_releases_rounded, iconColor: cs.primary,
               title: 'New Chapters', subtitle: 'Notify when new chapters are available',
-              value: _newChapters, onChanged: (v) => setState(() => _newChapters = v)),
+              value: _newChapters, onChanged: (v) {
+                setState(() => _newChapters = v);
+                _setBool(NotificationPrefs.newChapters, v);
+              }),
           _SwitchTile(icon: Icons.update_rounded, iconColor: cs.primary,
               title: 'Library Updates', subtitle: 'Notify after library update completes',
-              value: _libraryUpdate, onChanged: (v) => setState(() => _libraryUpdate = v)),
+              value: _libraryUpdate, onChanged: (v) {
+                setState(() => _libraryUpdate = v);
+                _setBool(NotificationPrefs.libraryUpdate, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Downloads'),
           _SwitchTile(icon: Icons.download_done_rounded, iconColor: AppTheme.success,
               title: 'Download Complete', subtitle: 'Notify when chapters finish downloading',
-              value: _downloadComplete, onChanged: (v) => setState(() => _downloadComplete = v)),
+              value: _downloadComplete, onChanged: (v) {
+                setState(() => _downloadComplete = v);
+                _setBool(NotificationPrefs.downloadComplete, v);
+              }),
           _SwitchTile(icon: Icons.error_outline_rounded, iconColor: AppTheme.error,
               title: 'Download Error', subtitle: 'Notify when a download fails',
-              value: _downloadError, onChanged: (v) => setState(() => _downloadError = v)),
+              value: _downloadError, onChanged: (v) {
+                setState(() => _downloadError = v);
+                _setBool(NotificationPrefs.downloadError, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Behavior'),
           _SwitchTile(icon: Icons.volume_up_rounded, iconColor: AppTheme.secondary,
               title: 'Sound', subtitle: 'Play sound for notifications',
-              value: _sound, onChanged: (v) => setState(() => _sound = v)),
+              value: _sound, onChanged: (v) {
+                setState(() => _sound = v);
+                _setBool(NotificationPrefs.sound, v);
+              }),
           _SwitchTile(icon: Icons.vibration_rounded, iconColor: AppTheme.secondary,
               title: 'Vibration', subtitle: 'Vibrate for notifications',
-              value: _vibration, onChanged: (v) => setState(() => _vibration = v)),
+              value: _vibration, onChanged: (v) {
+                setState(() => _vibration = v);
+                _setBool(NotificationPrefs.vibration, v);
+              }),
           _SwitchTile(icon: Icons.groups_rounded, iconColor: AppTheme.secondary,
               title: 'Group Notifications', subtitle: 'Combine multiple notifications',
-              value: _groupNotifications, onChanged: (v) => setState(() => _groupNotifications = v)),
+              value: _groupNotifications, onChanged: (v) {
+                setState(() => _groupNotifications = v);
+                _setBool(NotificationPrefs.groupNotifications, v);
+              }),
           const SizedBox(height: 24),
         ],
       ),

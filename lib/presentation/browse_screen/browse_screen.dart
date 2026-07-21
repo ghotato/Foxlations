@@ -133,6 +133,18 @@ class _BrowseScreenState extends State<BrowseScreen>
                   ),
                   if (_tabController.index == 1)
                     _buildActionButton(
+                      icon: Icons.auto_fix_high_rounded,
+                      color: cs.primary,
+                      onTap: () async {
+                        final provider = context.read<SourceProvider>();
+                        await Navigator.pushNamed(
+                            context, AppRoutes.repoForgeHub);
+                        provider.refreshRepos();
+                      },
+                      tooltip: 'RepoForge — build & manage sources',
+                    ),
+                  if (_tabController.index == 1)
+                    _buildActionButton(
                       icon: Icons.add_rounded,
                       color: cs.onSurface,
                       onTap: () => _showRepoSettings(context),

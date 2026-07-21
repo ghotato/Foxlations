@@ -9,6 +9,7 @@ import '../model/filter.dart';
 import '../model/m_manga.dart';
 import '../model/m_pages.dart';
 import '../model/m_source.dart';
+import '../model/m_video.dart';
 import '../model/page_url.dart';
 import '../model/source_preference.dart';
 import '../interface.dart';
@@ -72,6 +73,15 @@ class MProvider {
     }
     getSourcePreferences() {
         return [];
+    }
+    async getCategories() {
+        return [];
+    }
+    async getListing(url, page) {
+        return { list: [], hasNextPage: false };
+    }
+    async getHtmlContent(url) {
+        return "";
     }
 }
 async function jsonStringify(fn) {
@@ -167,6 +177,66 @@ var extention = new DefaultExtension();
       list = [];
     }
     return FilterList(list);
+  }
+
+  @override
+  Future<List<MVideo>> getVideoList(String url) async {
+    final escapedUrl = url.replaceAll('`', '\\`');
+    final raw =
+        await _extensionCallAsync<List>('getVideoList(`$escapedUrl`)');
+    final videos = <MVideo>[];
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final m = e.map((k, v) => MapEntry(k.toString(), v));
+      final vurl = (m['url'] ?? '').toString();
+      if (vurl.isEmpty) continue;
+      videos.add(MVideo(
+        vurl,
+        (m['quality'] ?? 'Video').toString(),
+        (m['originalUrl'] ?? vurl).toString(),
+        headers: (m['headers'] is Map)
+            ? (m['headers'] as Map)
+                .map((k, v) => MapEntry(k.toString(), v.toString()))
+            : null,
+      ));
+    }
+    return videos;
+  }
+
+  @override
+  Future<List<Map<String, String>>> getCategories() async {
+    try {
+      final raw = await _extensionCallAsync<List>('getCategories()');
+      return raw
+          .whereType<Map>()
+          .map((e) => {
+                'name': (e['name'] ?? '').toString(),
+                'link': (e['link'] ?? e['url'] ?? '').toString(),
+              })
+          .where((c) =>
+              (c['name'] ?? '').isNotEmpty && (c['link'] ?? '').isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  @override
+  Future<MPages> getListing(String listingUrl, int page) async {
+    final escaped = listingUrl.replaceAll('`', '\\`');
+    return MPages.fromJson(
+        await _extensionCallAsync('getListing(`$escaped`,$page)'));
+  }
+
+  @override
+  Future<String> getHtmlContent(String url) async {
+    try {
+      final escaped = url.replaceAll('`', '\\`');
+      final r = await _extensionCallAsync('getHtmlContent(`$escaped`)');
+      return r?.toString() ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   @override

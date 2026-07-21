@@ -20,6 +20,7 @@ class SourcesTabWidget extends StatefulWidget {
 
 class _SourcesTabWidgetState extends State<SourcesTabWidget> {
   String _selectedLang = 'all';
+  String _typeFilter = 'manga';
   Set<String> _pinnedIds = {};
   static const _pinnedKey = 'pinned_source_ids';
 
@@ -54,11 +55,28 @@ class _SourcesTabWidgetState extends State<SourcesTabWidget> {
       builder: (_, provider, vault, __) {
         var installed = provider.installedSources;
 
+        // Filter by type (manga / anime)
+        installed = installed
+            .where((s) => s.source.itemType == _typeFilter)
+            .toList();
+
         // Hide vault-only sources when not in vault mode
         // In vault mode, show everything (vault + regular sources)
         if (!vault.vaultActive) {
           installed = installed
               .where((s) => !vault.isSourceInVault(s.source.id))
+              .toList();
+        }
+
+        // Hide NSFW sources unless opted in (Browse settings).
+        if (!provider.showNsfw) {
+          installed = installed.where((s) => !s.source.isNsfw).toList();
+        }
+
+        // Pinned-only filter (Browse settings).
+        if (provider.pinnedOnlyBrowse) {
+          installed = installed
+              .where((s) => _pinnedIds.contains(s.source.id))
               .toList();
         }
 
@@ -91,6 +109,8 @@ class _SourcesTabWidgetState extends State<SourcesTabWidget> {
 
         return Column(
           children: [
+            // Manga / Anime type toggle
+            _buildTypeToggle(cs),
             // Language filter chips
             if (languages.length > 2)
               _buildLanguageChips(cs, languages.toList()),
@@ -99,62 +119,112 @@ class _SourcesTabWidgetState extends State<SourcesTabWidget> {
 
             // Content
             Expanded(
-              child: installed.isEmpty
-                  ? _buildEmptyState(cs)
-                  : Builder(builder: (_) {
-                      final pinned = installed.where((s) => _pinnedIds.contains(s.source.id)).toList();
-                      final unpinned = installed.where((s) => !_pinnedIds.contains(s.source.id)).toList();
-
-                      // Group unpinned by language
-                      final grouped = <String, List<InstalledSource>>{};
-                      for (final s in unpinned) {
-                        grouped.putIfAbsent(s.source.lang, () => []).add(s);
-                      }
-
-                      return ListView(
-                        padding: const EdgeInsets.only(bottom: 100),
+              child: RefreshIndicator(
+                onRefresh: _handleRefresh,
+                child: installed.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         children: [
-                          // Pinned section
-                          if (pinned.isNotEmpty) ...[
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                              child: Row(children: [
-                                Icon(Icons.push_pin_rounded, size: 14, color: cs.primary),
-                                const SizedBox(width: 6),
-                                Text('PINNED', style: GoogleFonts.manrope(
-                                  fontSize: 11, fontWeight: FontWeight.w700,
-                                  color: cs.primary, letterSpacing: 1.2)),
-                              ]),
-                            ),
-                            ...pinned.map((s) => _SourceRow(
-                              installedSource: s,
-                              isPinned: true,
-                              onTap: () => Navigator.pushNamed(context, AppRoutes.sourceCatalog,
-                                  arguments: {'sourceId': s.source.id, 'sourceName': s.source.name}),
-                              onLongPress: () => _showSourceDetail(context, s),
-                              onPinToggle: () => _togglePin(s.source.id),
-                            )),
-                            Divider(height: 1, color: cs.surfaceContainerHighest),
-                          ],
-                          // Unpinned grouped by language
-                          ...grouped.entries.expand((e) => [
-                            _LanguageHeader(lang: e.key),
-                            ...e.value.map((s) => _SourceRow(
-                              installedSource: s,
-                              isPinned: false,
-                              onTap: () => Navigator.pushNamed(context, AppRoutes.sourceCatalog,
-                                  arguments: {'sourceId': s.source.id, 'sourceName': s.source.name}),
-                              onLongPress: () => _showSourceDetail(context, s),
-                              onPinToggle: () => _togglePin(s.source.id),
-                            )),
-                          ]),
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: _buildEmptyState(cs),
+                          ),
                         ],
-                      );
-                    }),
+                      )
+                    : Builder(builder: (_) {
+                        final pinned = installed.where((s) => _pinnedIds.contains(s.source.id)).toList();
+                        final unpinned = installed.where((s) => !_pinnedIds.contains(s.source.id)).toList();
+
+                        // Group unpinned by language
+                        final grouped = <String, List<InstalledSource>>{};
+                        for (final s in unpinned) {
+                          grouped.putIfAbsent(s.source.lang, () => []).add(s);
+                        }
+
+                        return ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.only(bottom: 100),
+                          children: [
+                            // Pinned section
+                            if (pinned.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                                child: Row(children: [
+                                  Icon(Icons.push_pin_rounded, size: 14, color: cs.primary),
+                                  const SizedBox(width: 6),
+                                  Text('PINNED', style: GoogleFonts.manrope(
+                                    fontSize: 11, fontWeight: FontWeight.w700,
+                                    color: cs.primary, letterSpacing: 1.2)),
+                                ]),
+                              ),
+                              ...pinned.map((s) => _SourceRow(
+                                installedSource: s,
+                                isPinned: true,
+                                onTap: () => Navigator.pushNamed(context, AppRoutes.sourceCatalog,
+                                    arguments: {'sourceId': s.source.id, 'sourceName': s.source.name}),
+                                onLongPress: () => _showSourceDetail(context, s),
+                                onPinToggle: () => _togglePin(s.source.id),
+                              )),
+                              Divider(height: 1, color: cs.surfaceContainerHighest),
+                            ],
+                            // Unpinned grouped by language
+                            ...grouped.entries.expand((e) => [
+                              _LanguageHeader(lang: e.key),
+                              ...e.value.map((s) => _SourceRow(
+                                installedSource: s,
+                                isPinned: false,
+                                onTap: () => Navigator.pushNamed(context, AppRoutes.sourceCatalog,
+                                    arguments: {'sourceId': s.source.id, 'sourceName': s.source.name}),
+                                onLongPress: () => _showSourceDetail(context, s),
+                                onPinToggle: () => _togglePin(s.source.id),
+                              )),
+                            ]),
+                          ],
+                        );
+                      }),
+              ),
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildTypeToggle(ColorScheme cs) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: cs.surfaceContainerHighest)),
+      ),
+      child: Row(
+        children: [
+          for (final type in ['manga', 'anime'])
+            GestureDetector(
+              onTap: () => setState(() {
+                _typeFilter = type;
+                _selectedLang = 'all';
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: _typeFilter == type ? cs.primary : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                child: Text(
+                  type == 'manga' ? 'Manga' : 'Anime',
+                  style: GoogleFonts.manrope(
+                    fontSize: 13,
+                    fontWeight: _typeFilter == type ? FontWeight.w700 : FontWeight.w500,
+                    color: _typeFilter == type ? cs.primary : cs.outline,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -235,6 +305,25 @@ class _SourcesTabWidgetState extends State<SourcesTabWidget> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleRefresh() async {
+    final provider = context.read<SourceProvider>();
+    try {
+      final count = await provider.refreshAllSourceCode();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Updated $count source${count == 1 ? '' : 's'}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Refresh failed: $e')),
+      );
+    }
   }
 
   void _showSourceDetail(BuildContext context, InstalledSource source) {

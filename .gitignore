@@ -43,3 +43,23 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Signing secrets — never commit
+android/key.properties
+*.jks
+*.keystore
+
+# ── Build-only repo: keep just what's needed to build Android + iOS ──
+# Numbered local build outputs (APK/IPA live on the server, not in git).
+/builds/
+
+# Other platform projects — we only build Android + iOS. These stay on disk
+# (regenerate with `flutter create` if you ever target them) but off GitHub.
+/macos/
+/windows/
+/linux/
+/web/
+
+# Dev-only Dart tools + generated dev config (not needed to build the app).
+/tool/
+/devtools_options.yaml

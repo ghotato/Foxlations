@@ -4,12 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeProvider extends ChangeNotifier {
   static const _themeKey = 'theme_mode';
   static const _breedKey = 'theme_breed';
+  static const _invertKey = 'theme_invert_colors';
 
   ThemeMode _themeMode = ThemeMode.dark;
   String _breedId = 'red_fox';
+  bool _invertColors = false;
 
   ThemeMode get themeMode => _themeMode;
   String get breedId => _breedId;
+  bool get invertColors => _invertColors;
 
   /// Get the primary color for the current breed and brightness.
   Color primaryColor(Brightness brightness) {
@@ -27,6 +30,7 @@ class ThemeProvider extends ChangeNotifier {
     final value = prefs.getString(_themeKey);
     _themeMode = value == 'light' ? ThemeMode.light : ThemeMode.dark;
     _breedId = prefs.getString(_breedKey) ?? 'red_fox';
+    _invertColors = prefs.getBool(_invertKey) ?? false;
     notifyListeners();
   }
 
@@ -43,6 +47,14 @@ class ThemeProvider extends ChangeNotifier {
     _breedId = breedId;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_breedKey, breedId);
+    notifyListeners();
+  }
+
+  Future<void> setInvertColors(bool value) async {
+    if (_invertColors == value) return;
+    _invertColors = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_invertKey, value);
     notifyListeners();
   }
 

@@ -204,4 +204,11 @@ class VaultProvider extends ChangeNotifier {
     _manga = _vaultService.getAllManga();
     notifyListeners();
   }
+
+  // ── Reading stats ──────────────────────────────────────────────────
+  Map<DateTime, int> getReadActivityByDay({int days = 365}) =>
+      _vaultService.getReadActivityByDay(days: days);
+
+  int getCurrentReadingStreak() => _vaultService.getCurrentReadingStreak();
+  int getLongestReadingStreak() => _vaultService.getLongestReadingStreak();
 }

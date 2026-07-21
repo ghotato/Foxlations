@@ -10,6 +10,63 @@ import '../services/isolate_service.dart';
 
 enum ReadingMode { ltr, rtl, vertical, webtoon }
 
+/// Snapshot of reader preferences loaded from SharedPreferences when a
+/// chapter is opened. Read-only — to change values open the Reader settings
+/// page; the next chapter open will pick up the new state.
+class ReaderSettings {
+  final bool fullscreen;
+  final bool keepScreenOn;
+  final bool showPageNumber;
+  final bool grayscale;
+  final bool invertColors;
+  final bool invertTapZones;
+  final bool volumeKeys;
+  final bool autoPreload;
+  final bool cropBorders;
+  final String scaleType;
+  final String navLayout;
+  final String bgColor;
+  final double fontSize;
+  final double imageZoom;
+
+  const ReaderSettings({
+    this.fullscreen = true,
+    this.keepScreenOn = true,
+    this.showPageNumber = true,
+    this.grayscale = false,
+    this.invertColors = false,
+    this.invertTapZones = false,
+    this.volumeKeys = false,
+    this.autoPreload = true,
+    this.cropBorders = false,
+    this.scaleType = 'Fit Screen',
+    this.navLayout = 'Right & Left',
+    this.bgColor = 'Black',
+    this.fontSize = 16.0,
+    this.imageZoom = 1.0,
+  });
+
+  static Future<ReaderSettings> load() async {
+    final p = await SharedPreferences.getInstance();
+    return ReaderSettings(
+      fullscreen: p.getBool('reader_fullscreen') ?? true,
+      keepScreenOn: p.getBool('reader_keep_screen_on') ?? true,
+      showPageNumber: p.getBool('reader_show_page_num') ?? true,
+      grayscale: p.getBool('reader_grayscale') ?? false,
+      invertColors: p.getBool('reader_invert_colors') ?? false,
+      invertTapZones: p.getBool('reader_invert_tap') ?? false,
+      volumeKeys: p.getBool('reader_volume_keys') ?? false,
+      autoPreload: p.getBool('reader_auto_preload') ?? true,
+      cropBorders: p.getBool('reader_crop_borders') ?? false,
+      scaleType: p.getString('reader_scale_type') ?? 'Fit Screen',
+      navLayout: p.getString('reader_nav_layout') ?? 'Right & Left',
+      bgColor: p.getString('reader_bg_color') ?? 'Black',
+      fontSize: p.getDouble('reader_font_size') ?? 16.0,
+      imageZoom: p.getDouble('reader_image_zoom') ?? 1.0,
+    );
+  }
+}
+
 /// Marks a chapter boundary in the unified page list.
 class ChapterBoundary {
   final int pageIndex; // Index in the unified pages list where this boundary sits
@@ -40,6 +97,7 @@ class ReaderProvider extends ChangeNotifier {
   String? _error;
   ReadingMode _readingMode = ReadingMode.ltr;
   bool _showHud = false;
+  ReaderSettings _settings = const ReaderSettings();
 
   final int _startPage;
 
@@ -76,6 +134,7 @@ class ReaderProvider extends ChangeNotifier {
   String? get error => _error;
   ReadingMode get readingMode => _readingMode;
   bool get showHud => _showHud;
+  ReaderSettings get settings => _settings;
   int get totalPages => _pages.length;
   bool get hasPreviousChapter => _currentChapterIndex > 0;
   bool get hasNextChapter => _currentChapterIndex < _chapters.length - 1;
@@ -85,6 +144,40 @@ class ReaderProvider extends ChangeNotifier {
       _currentChapterIndex < _chapters.length
           ? _chapters[_currentChapterIndex]['url'] as String? ?? _chapterUrl
           : _chapterUrl;
+
+  /// Display name of the chapter currently being read (for progress parsing).
+  String get currentChapterName =>
+      _currentChapterIndex < _chapters.length
+          ? (_chapters[_currentChapterIndex]['name'] as String? ?? '')
+          : '';
+
+  /// Index of the chapter currently being read (0-based, into the chapter
+  /// list passed at construction).
+  int get currentChapterIndex => _currentChapterIndex;
+
+  /// Total chapters available in the reader's chapter list.
+  int get chaptersCount => _chapters.length;
+
+  /// Returns the next chapter's `{url, name}` or null if there is none.
+  Map<String, String>? get nextChapterInfo {
+    final next = _currentChapterIndex + 1;
+    if (next >= _chapters.length) return null;
+    return {
+      'url': _chapters[next]['url'] as String? ?? '',
+      'name': _chapters[next]['name'] as String? ?? '',
+    };
+  }
+
+  /// Returns the chapter at [offset] positions behind the current one.
+  /// Used by Reader settings auto-delete to find the chapter to remove.
+  Map<String, String>? chapterAtOffset(int offset) {
+    final idx = _currentChapterIndex - offset;
+    if (idx < 0 || idx >= _chapters.length) return null;
+    return {
+      'url': _chapters[idx]['url'] as String? ?? '',
+      'name': _chapters[idx]['name'] as String? ?? '',
+    };
+  }
 
   String? _chapterName(int index) {
     if (index < 0 || index >= _chapters.length) return null;
@@ -96,8 +189,11 @@ class ReaderProvider extends ChangeNotifier {
     final saved = prefs.getInt(_readingModeKey);
     if (saved != null && saved < ReadingMode.values.length) {
       _readingMode = ReadingMode.values[saved];
-      notifyListeners();
     }
+    // Load all reader settings in one shot — used by reader_screen to apply
+    // visual / behavior preferences (background, grayscale, tap zones, etc.).
+    _settings = await ReaderSettings.load();
+    notifyListeners();
   }
 
   Future<void> loadPages() async {

@@ -188,9 +188,15 @@ class LibraryService {
   }
 
   // ── Chapter cache ───────────────────────────────────────────
-  /// Cache chapters for a library manga (called after getDetail)
+  /// Cache chapters for a library manga (called after getDetail).
+  /// Records each chapter's position in the input list as `sourceIndex` so
+  /// that [getCachedChapters] can return them in the original source order
+  /// rather than Hive's key insertion order (which causes alphabetical
+  /// "Chapter 1, 10, 100, 101..." flickering on first load).
   Future<void> cacheChapters(String sourceId, String mangaUrl, List<LibraryChapter> chapters) async {
-    for (final ch in chapters) {
+    for (var i = 0; i < chapters.length; i++) {
+      final ch = chapters[i];
+      ch.sourceIndex = i;
       final key = ch.uniqueKey;
       final existing = _chapterBox?.get(key);
       if (existing != null) {
@@ -212,9 +218,45 @@ class LibraryService {
 
   /// Get cached chapters for a manga (for instant detail screen load)
   List<LibraryChapter> getCachedChapters(String sourceId, String mangaUrl) {
-    return _chapterBox?.values
+    final list = _chapterBox?.values
         .where((c) => c.sourceId == sourceId && c.mangaUrl == mangaUrl)
-        .toList() ?? [];
+        .toList() ?? <LibraryChapter>[];
+    final hasIndices = list.any((c) => c.sourceIndex != null);
+    if (hasIndices) {
+      // Cached after the sourceIndex fix — preserve the source's exact
+      // order. Any stragglers without an index sort to the end.
+      list.sort((a, b) {
+        final ai = a.sourceIndex;
+        final bi = b.sourceIndex;
+        if (ai == null && bi == null) return 0;
+        if (ai == null) return 1;
+        if (bi == null) return -1;
+        return ai.compareTo(bi);
+      });
+    } else {
+      // Pre-fix cache — Hive's iteration order is unreliable here
+      // (markChapterRead can splice records into the box at random points).
+      // Fall back to natural-numeric sort on the chapter title, descending,
+      // which matches how almost every source returns chapters (newest
+      // first). The first background refresh will stamp real sourceIndex
+      // values and switch to the branch above.
+      list.sort((a, b) {
+        final na = _parseChapterNumber(a.title);
+        final nb = _parseChapterNumber(b.title);
+        if (na == null && nb == null) return a.title.compareTo(b.title);
+        if (na == null) return 1;
+        if (nb == null) return -1;
+        return nb.compareTo(na);
+      });
+    }
+    return list;
+  }
+
+  static final _chapterNumberRegExp = RegExp(r'(\d+(?:\.\d+)?)');
+  static double? _parseChapterNumber(String title) {
+    final match = _chapterNumberRegExp.firstMatch(title);
+    if (match == null) return null;
+    return double.tryParse(match.group(1)!);
   }
 
   Future<void> markAllChaptersUnread(String sourceId, String mangaUrl) async {
@@ -233,5 +275,65 @@ class LibraryService {
     if (keysToRemove != null) {
       await _chapterBox?.deleteAll(keysToRemove);
     }
+  }
+
+  // ── Reading stats ──────────────────────────────────────────────────
+  /// Returns a map of `date (midnight) → number of chapters read on that
+  /// day`, restricted to the last [days] days. Used by the activity
+  /// heatmap.
+  Map<DateTime, int> getReadActivityByDay({int days = 365}) {
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: days - 1));
+    final activity = <DateTime, int>{};
+    if (_chapterBox == null) return activity;
+    for (final ch in _chapterBox!.values) {
+      final r = ch.readAt;
+      if (r == null || !ch.isRead) continue;
+      final day = DateTime(r.year, r.month, r.day);
+      if (day.isBefore(cutoff)) continue;
+      activity[day] = (activity[day] ?? 0) + 1;
+    }
+    return activity;
+  }
+
+  /// Current streak: consecutive days ending today (or yesterday) on
+  /// which at least one chapter was read.
+  int getCurrentReadingStreak() {
+    final activity = getReadActivityByDay(days: 365);
+    if (activity.isEmpty) return 0;
+    final now = DateTime.now();
+    var day = DateTime(now.year, now.month, now.day);
+    // Allow the streak to be "alive" if user hasn't read yet today but did
+    // read yesterday — start counting from yesterday in that case.
+    if ((activity[day] ?? 0) == 0) {
+      day = day.subtract(const Duration(days: 1));
+      if ((activity[day] ?? 0) == 0) return 0;
+    }
+    var streak = 0;
+    while ((activity[day] ?? 0) > 0) {
+      streak++;
+      day = day.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  /// Longest streak ever recorded in the chapter history.
+  int getLongestReadingStreak() {
+    final activity = getReadActivityByDay(days: 365);
+    if (activity.isEmpty) return 0;
+    final dates = activity.keys.toList()..sort();
+    var longest = 1;
+    var current = 1;
+    for (var i = 1; i < dates.length; i++) {
+      final diff = dates[i].difference(dates[i - 1]).inDays;
+      if (diff == 1) {
+        current++;
+        if (current > longest) longest = current;
+      } else if (diff > 1) {
+        current = 1;
+      }
+    }
+    return longest;
   }
 }

@@ -89,7 +89,10 @@ class RepoService {
       if (_isLocalPath(repoUrl)) {
         // Local file path
         final path = repoUrl.startsWith('file://')
-            ? Uri.parse(repoUrl).toFilePath()
+            ? Uri.parse(repoUrl.startsWith('file:///')
+                    ? repoUrl
+                    : repoUrl.replaceFirst('file://', 'file:///'))
+                .toFilePath()
             : repoUrl;
         final file = File(path);
         if (!await file.exists()) {
@@ -110,17 +113,51 @@ class RepoService {
           'length: ${data is String ? data.length : (data is Map ? data.keys.length : '?')}',
           category: LogCategory.repo);
       final result = _parseIndex(data, repoUrl);
-      await logger.info('Parsed ${result.totalCount} sources '
-          '(repo: ${result.repoName})',
+      final allSources = List<MangaSource>.from(result.sources);
+
+      // Mangayomi/keiyoushi repos split content across sibling index files
+      // (index.json = manga, anime_index.json, novel_index.json). Those indexes
+      // are top-level JSON arrays; the Foxlations format is a `{sources:[…]}`
+      // object with no siblings. So only chase siblings when we fetched a bare
+      // array over HTTP — pulling the anime/novel sources with the right type.
+      if (!_isLocalPath(repoUrl) && data is List) {
+        final base = _effectiveUrl(repoUrl);
+        for (final kind in const ['anime', 'novel']) {
+          final sib = _siblingIndexUrl(base, kind);
+          if (sib == null) continue;
+          try {
+            final resp = await _dio.get<dynamic>(sib);
+            final parsed = _parseIndex(resp.data, sib, defaultType: kind);
+            allSources.addAll(parsed.sources);
+            await logger.info('Imported ${parsed.sources.length} $kind sources',
+                category: LogCategory.repo);
+          } catch (_) {
+            // Sibling index not present (e.g. Foxlations single-file repo) — fine.
+          }
+        }
+      }
+
+      final combined = RepoIndexResult(
+        repoName: result.repoName,
+        repoVersion: result.repoVersion,
+        sources: allSources,
+      );
+      await logger.info('Parsed ${combined.totalCount} sources '
+          '(repo: ${combined.repoName})',
           category: LogCategory.repo);
 
-      // Cache
+      // Cache the combined, normalized set (itemType resolved to strings) so the
+      // cached read returns every type without re-fetching siblings.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         '$_indexCachePrefix${_cacheKey(repoUrl)}',
-        jsonEncode(data),
+        jsonEncode({
+          'repoName': combined.repoName,
+          'repoVersion': combined.repoVersion,
+          'sources': allSources.map((s) => s.toJson()).toList(),
+        }),
       );
-      return result;
+      return combined;
     } on DioException catch (e) {
       final msg = e.response?.statusCode != null
           ? 'HTTP ${e.response!.statusCode}'
@@ -145,10 +182,31 @@ class RepoService {
     }
   }
 
-  RepoIndexResult _parseIndex(dynamic data, String repoUrl) {
+  /// Given a manga `index.json` / `index.min.json` URL, return the sibling
+  /// `{kind}_index(.min).json` URL in the same directory, or null if the input
+  /// isn't a base manga index (so we don't chase siblings for typed/other files).
+  static String? _siblingIndexUrl(String url, String kind) {
+    final m = RegExp(r'^(.*/)index(\.min)?\.json(\?.*)?$', caseSensitive: false)
+        .firstMatch(url);
+    if (m == null) return null;
+    return '${m.group(1)}${kind}_index${m.group(2) ?? ''}.json${m.group(3) ?? ''}';
+  }
+
+  /// The content type implied by a Mangayomi-style index filename, so anime /
+  /// novel indexes tag their sources correctly even when a row omits itemType.
+  static String _typeFromUrl(String url) {
+    final u = url.toLowerCase();
+    if (u.contains('anime_index') || u.contains('anime-index')) return 'anime';
+    if (u.contains('novel_index') || u.contains('novel-index')) return 'novel';
+    return 'manga';
+  }
+
+  RepoIndexResult _parseIndex(dynamic data, String repoUrl,
+      {String? defaultType}) {
     if (data is String) {
       data = jsonDecode(data);
     }
+    final dt = defaultType ?? _typeFromUrl(repoUrl);
 
     // Our format: { repoName, repoVersion, sources: [...] }
     if (data is Map<String, dynamic> && data.containsKey('sources')) {
@@ -158,8 +216,9 @@ class RepoService {
       final sources = rawList
           .whereType<Map<String, dynamic>>()
           .map((e) {
-            final s = MangaSource.fromJson(e, repoUrl, repoName: name);
-            debugPrint('[repo] Source: ${s.name} (${s.id}), url: ${s.sourceCodeUrl.isNotEmpty}');
+            final s = MangaSource.fromJson(e, repoUrl,
+                repoName: name, defaultType: dt);
+            debugPrint('[repo] Source: ${s.name} (${s.id}) [${s.itemType}], url: ${s.sourceCodeUrl.isNotEmpty}');
             return s;
           })
           .where((s) => s.name.isNotEmpty)
@@ -171,11 +230,11 @@ class RepoService {
       );
     }
 
-    // Fallback: bare array
+    // Fallback: bare array (Mangayomi/keiyoushi index.json is a top-level array)
     if (data is List) {
       final sources = data
           .whereType<Map<String, dynamic>>()
-          .map((e) => MangaSource.fromJson(e, repoUrl))
+          .map((e) => MangaSource.fromJson(e, repoUrl, defaultType: dt))
           .where((s) => s.name.isNotEmpty)
           .toList();
       return RepoIndexResult(sources: sources);

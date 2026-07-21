@@ -21,6 +21,8 @@ abstract class MProvider {
 
   Future<List<dynamic>> getPageList(String url);
 
+  Future<List<dynamic>> getVideoList(String url) async => [];
+
   List<dynamic> getFilterList() => [];
 
   List<dynamic> getSourcePreferences() => [];

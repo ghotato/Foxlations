@@ -5,7 +5,10 @@ import '../widgets/manga_image.dart';
 import '../../core/models/manga_model.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/tracking_provider.dart';
 import '../../core/providers/vault_provider.dart';
+import '../../core/utils/html_util.dart';
+import '../tracking/tracking_sheet.dart';
 import '../../core/providers/download_provider.dart';
 import '../../core/services/local_source_service.dart';
 import 'migrate_screen.dart';
@@ -334,12 +337,28 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                 Expanded(child: _ActionButton(
                   icon: Icons.sync_rounded,
                   label: 'Tracking',
-                  active: false,
+                  active: context.watch<TrackingProvider>()
+                      .bindingsFor('${widget.sourceId}_${widget.mangaUrl}')
+                      .isNotEmpty,
                   cs: cs,
                   onTap: () {
-                    // TODO: implement tracking
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Tracking coming soon'), duration: Duration(seconds: 1)),
+                    final readCount = _manga?.chapters
+                            ?.where((c) => libraryProvider.isChapterRead(
+                                widget.sourceId, c.url ?? ''))
+                            .length ??
+                        0;
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: cs.surface,
+                      shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20))),
+                      builder: (_) => TrackingSheet(
+                        mangaKey: '${widget.sourceId}_${widget.mangaUrl}',
+                        title: title,
+                        localProgress: readCount,
+                      ),
                     );
                   },
                 )),
@@ -363,7 +382,7 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                 child: GestureDetector(
                   onTap: () => setState(() => _descExpanded = !_descExpanded),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(_manga!.description!,
+                    Text(stripHtml(_manga!.description!),
                         style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurface.withAlpha(200)),
                         maxLines: _descExpanded ? 100 : 3,
                         overflow: TextOverflow.ellipsis),
@@ -555,17 +574,39 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                 final chapters = _manga!.chapters!;
                 final lastUrl = libraryManga!.lastReadChapterUrl!;
                 final idx = chapters.indexWhere((c) => c.url == lastUrl);
+                final sp = context.read<SourceProvider>();
+                final src = sp.getInstalledSource(widget.sourceId)?.source;
+                final isAnime = src?.isAnime ?? false;
+                final isNovel = src?.isNovel ?? false;
                 final chapterMaps = chapters.map((c) => {'url': c.url, 'name': c.name}).toList();
-                Navigator.pushNamed(context, AppRoutes.reader, arguments: {
-                  'chapterUrl': lastUrl,
-                  'sourceId': widget.sourceId,
-                  'mangaUrl': widget.mangaUrl,
-                  'chapterTitle': idx >= 0 ? chapters[idx].name : null,
-                  'mangaTitle': title,
-                  'chapters': chapterMaps,
-                  'currentIndex': idx >= 0 ? idx : 0,
-                  'startPage': libraryManga!.lastReadPage,
-                });
+                if (isNovel) {
+                  Navigator.pushNamed(context, AppRoutes.novelReader, arguments: {
+                    'chapterUrl': lastUrl,
+                    'sourceId': widget.sourceId,
+                    'chapterTitle': idx >= 0 ? chapters[idx].name : null,
+                    'mangaTitle': title,
+                    'chapters': chapterMaps,
+                    'currentIndex': idx >= 0 ? idx : 0,
+                  });
+                } else if (isAnime) {
+                  Navigator.pushNamed(context, AppRoutes.player, arguments: {
+                    'episodeUrl': lastUrl,
+                    'sourceId': widget.sourceId,
+                    'episodeTitle': idx >= 0 ? chapters[idx].name : null,
+                    'animeTitle': title,
+                  });
+                } else {
+                  Navigator.pushNamed(context, AppRoutes.reader, arguments: {
+                    'chapterUrl': lastUrl,
+                    'sourceId': widget.sourceId,
+                    'mangaUrl': widget.mangaUrl,
+                    'chapterTitle': idx >= 0 ? chapters[idx].name : null,
+                    'mangaTitle': title,
+                    'chapters': chapterMaps,
+                    'currentIndex': idx >= 0 ? idx : 0,
+                    'startPage': libraryManga.lastReadPage,
+                  });
+                }
               },
             )
           : null,
@@ -591,15 +632,39 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
     return InkWell(
       onTap: () {
         if (chapterUrl.isEmpty) return;
-        Navigator.pushNamed(context, AppRoutes.reader, arguments: {
-          'chapterUrl': chapterUrl,
-          'sourceId': widget.sourceId,
-          'mangaUrl': widget.mangaUrl,
-          'chapterTitle': chapter.name,
-          'mangaTitle': _manga?.name,
-          'chapters': allChapters,
-          'currentIndex': index >= 0 ? index : 0,
-        });
+        final src2 = context
+            .read<SourceProvider>()
+            .getInstalledSource(widget.sourceId)
+            ?.source;
+        final isAnime = src2?.isAnime ?? false;
+        final isNovel = src2?.isNovel ?? false;
+        if (isNovel) {
+          Navigator.pushNamed(context, AppRoutes.novelReader, arguments: {
+            'chapterUrl': chapterUrl,
+            'sourceId': widget.sourceId,
+            'chapterTitle': chapter.name,
+            'mangaTitle': _manga?.name,
+            'chapters': allChapters,
+            'currentIndex': index >= 0 ? index : 0,
+          });
+        } else if (isAnime) {
+          Navigator.pushNamed(context, AppRoutes.player, arguments: {
+            'episodeUrl': chapterUrl,
+            'sourceId': widget.sourceId,
+            'episodeTitle': chapter.name,
+            'animeTitle': _manga?.name,
+          });
+        } else {
+          Navigator.pushNamed(context, AppRoutes.reader, arguments: {
+            'chapterUrl': chapterUrl,
+            'sourceId': widget.sourceId,
+            'mangaUrl': widget.mangaUrl,
+            'chapterTitle': chapter.name,
+            'mangaTitle': _manga?.name,
+            'chapters': allChapters,
+            'currentIndex': index >= 0 ? index : 0,
+          });
+        }
       },
       onLongPress: () {
         setState(() {
@@ -675,21 +740,30 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               tooltip: isDl ? 'Delete download' : 'Download',
               onPressed: () {
+                final title = _manga?.name ?? widget.title ?? 'Unknown';
                 if (isDl) {
                   dlProvider.deleteDownload(
-                    widget.sourceId,
-                    _manga?.name ?? widget.title ?? 'Unknown',
-                    chapter.name ?? 'Chapter',
-                    chapterUrl,
-                  );
+                    widget.sourceId, title, chapter.name ?? 'Chapter', chapterUrl);
                 } else {
-                  dlProvider.enqueueChapter(
-                    sourceId: widget.sourceId,
-                    mangaUrl: widget.mangaUrl,
-                    mangaTitle: _manga?.name ?? widget.title ?? 'Unknown',
-                    chapterUrl: chapterUrl,
-                    chapterName: chapter.name ?? 'Chapter',
-                  );
+                  final isAnime = context.read<SourceProvider>()
+                      .getInstalledSource(widget.sourceId)?.source.isAnime ?? false;
+                  if (isAnime) {
+                    dlProvider.enqueueEpisode(
+                      sourceId: widget.sourceId,
+                      animeUrl: widget.mangaUrl,
+                      animeTitle: title,
+                      episodeUrl: chapterUrl,
+                      episodeName: chapter.name ?? 'Episode',
+                    );
+                  } else {
+                    dlProvider.enqueueChapter(
+                      sourceId: widget.sourceId,
+                      mangaUrl: widget.mangaUrl,
+                      mangaTitle: title,
+                      chapterUrl: chapterUrl,
+                      chapterName: chapter.name ?? 'Chapter',
+                    );
+                  }
                 }
               },
             );
@@ -750,13 +824,28 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
       return;
     }
 
-    dlProvider.enqueueChapters(toDownload.map((c) => {
-      'sourceId': widget.sourceId,
-      'mangaUrl': widget.mangaUrl,
-      'mangaTitle': mangaTitle,
-      'chapterUrl': c.url ?? '',
-      'chapterName': c.name ?? 'Chapter',
-    }).toList());
+    final isAnime = context.read<SourceProvider>()
+        .getInstalledSource(widget.sourceId)?.source.isAnime ?? false;
+
+    if (isAnime) {
+      for (final c in toDownload) {
+        dlProvider.enqueueEpisode(
+          sourceId: widget.sourceId,
+          animeUrl: widget.mangaUrl,
+          animeTitle: mangaTitle,
+          episodeUrl: c.url ?? '',
+          episodeName: c.name ?? 'Episode',
+        );
+      }
+    } else {
+      dlProvider.enqueueChapters(toDownload.map((c) => {
+        'sourceId': widget.sourceId,
+        'mangaUrl': widget.mangaUrl,
+        'mangaTitle': mangaTitle,
+        'chapterUrl': c.url ?? '',
+        'chapterName': c.name ?? 'Chapter',
+      }).toList());
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

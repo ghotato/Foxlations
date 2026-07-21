@@ -108,7 +108,18 @@ class _CatalogBodyState extends State<_CatalogBody> {
               preferredSize: const Size.fromHeight(48),
               child: Row(
                 children: [
-                  for (final tab in CatalogTab.values.where((t) => t != CatalogTab.search))
+                  // Tabs adapt to the source: video sources get a "Categories"
+                  // tab in place of "Latest"; manga sources keep "Latest" when
+                  // supported. The Categories tab relabels to the drilled-in
+                  // category name.
+                  for (final tab in CatalogTab.values.where((t) {
+                    if (t == CatalogTab.search) return false;
+                    if (t == CatalogTab.categories) return catalog.showCategoriesTab;
+                    if (t == CatalogTab.latest) {
+                      return !catalog.showCategoriesTab && catalog.supportsLatest;
+                    }
+                    return true; // popular
+                  }))
                     Expanded(
                       child: InkWell(
                         onTap: () => catalog.setTab(tab),
@@ -126,7 +137,10 @@ class _CatalogBodyState extends State<_CatalogBody> {
                             ),
                           ),
                           child: Text(
-                            tab.name[0].toUpperCase() + tab.name.substring(1),
+                            tab == CatalogTab.categories &&
+                                    catalog.selectedCategory != null
+                                ? catalog.selectedCategory!['name']!
+                                : tab.name[0].toUpperCase() + tab.name.substring(1),
                             style: theme.textTheme.labelLarge?.copyWith(
                               color: catalog.currentTab == tab
                                   ? theme.colorScheme.primary
@@ -147,6 +161,11 @@ class _CatalogBodyState extends State<_CatalogBody> {
   }
 
   Widget _buildContent(BuildContext context, CatalogProvider catalog) {
+    // Categories tab, not yet drilled into a category: show the category list.
+    if (catalog.currentTab == CatalogTab.categories &&
+        catalog.selectedCategory == null) {
+      return _buildCategoryList(context, catalog);
+    }
     if (catalog.error != null && catalog.currentManga.isEmpty) {
       final is403 = catalog.error!.contains('403');
       return Center(
@@ -210,7 +229,7 @@ class _CatalogBodyState extends State<_CatalogBody> {
       return const Center(child: Text('No manga found'));
     }
 
-    return RefreshIndicator(
+    final grid = RefreshIndicator(
       onRefresh: () => catalog.refresh(),
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -240,6 +259,76 @@ class _CatalogBodyState extends State<_CatalogBody> {
             );
           },
         ),
+      ),
+    );
+
+    // Inside a drilled-in category: prepend a back bar to return to the list.
+    if (catalog.currentTab == CatalogTab.categories &&
+        catalog.selectedCategory != null) {
+      return Column(children: [
+        _categoryBackBar(context, catalog),
+        Expanded(child: grid),
+      ]);
+    }
+    return grid;
+  }
+
+  Widget _categoryBackBar(BuildContext context, CatalogProvider catalog) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest,
+      child: InkWell(
+        onTap: catalog.clearCategory,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(children: [
+            Icon(Icons.arrow_back_rounded, size: 18, color: cs.primary),
+            const SizedBox(width: 8),
+            Text('All categories',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelLarge
+                    ?.copyWith(color: cs.primary)),
+            const Spacer(),
+            Text(catalog.selectedCategory?['name'] ?? '',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: cs.outline)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryList(BuildContext context, CatalogProvider catalog) {
+    final cs = Theme.of(context).colorScheme;
+    if (catalog.categoriesLoading && catalog.categories.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (catalog.categories.isEmpty) {
+      return Center(
+        child: Text('No categories',
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: cs.outline)),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final cat in catalog.categories)
+            ActionChip(
+              label: Text(cat['name'] ?? ''),
+              onPressed: () => catalog.selectCategory(cat),
+              backgroundColor: cs.surfaceContainerHighest,
+              side: BorderSide(color: cs.outlineVariant),
+            ),
+        ],
       ),
     );
   }

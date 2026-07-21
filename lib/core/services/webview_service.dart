@@ -53,6 +53,13 @@ class WebViewService {
   /// Resolve Cloudflare challenge for a URL.
   /// Returns true if challenge was solved and cookies extracted.
   Future<bool> resolveCloudflare(String url) async {
+    // WebView2 on Windows can't extract HttpOnly cf_clearance cookies and
+    // crashes with modern Cloudflare Turnstile challenges. Skip on Windows.
+    if (Platform.isWindows) {
+      debugPrint('[WebView] Skipping CF resolution on Windows (HttpOnly cookies unsupported)');
+      return false;
+    }
+
     final domain = normalizeDomain(Uri.parse(url).host);
 
     if (_cleared.contains(domain)) return true;
@@ -70,29 +77,40 @@ class WebViewService {
         webViewEnvironment: webViewEnvironment,
         initialUrlRequest: URLRequest(url: WebUri(url)),
         onLoadStop: (controller, loadedUrl) async {
-          // Check if still on Cloudflare challenge page
-          try {
-            isCloudflare = await controller.evaluateJavascript(
-                  source:
-                      "document.head.innerHTML.includes('#challenge-success-text')",
-                ) ??
-                false;
-          } catch (_) {
-            isCloudflare = false;
+          // Check if still on Cloudflare challenge page.
+          // CF challenge pages have title "Just a moment..." or similar.
+          Future<bool> isCfChallenge() async {
+            try {
+              final title = await controller.evaluateJavascript(
+                    source: "document.title",
+                  ) ??
+                  '';
+              final titleStr = title.toString().toLowerCase();
+              if (titleStr.contains('just a moment') ||
+                  titleStr.contains('checking your browser') ||
+                  titleStr.contains('please wait')) {
+                return true;
+              }
+              // Also check for CF challenge elements
+              final hasCfEl = await controller.evaluateJavascript(
+                    source:
+                        "!!(document.getElementById('challenge-form') || "
+                        "document.getElementById('cf-please-wait') || "
+                        "document.querySelector('[class*=\"cf-\"]'))",
+                  ) ??
+                  false;
+              return hasCfEl == true;
+            } catch (_) {
+              return false;
+            }
           }
+
+          isCloudflare = await isCfChallenge();
 
           // Poll until challenge is resolved
           while (isCloudflare && !timedOut) {
-            await Future.delayed(const Duration(milliseconds: 300));
-            try {
-              isCloudflare = await controller.evaluateJavascript(
-                    source:
-                        "document.head.innerHTML.includes('#challenge-success-text')",
-                  ) ??
-                  false;
-            } catch (_) {
-              isCloudflare = false;
-            }
+            await Future.delayed(const Duration(milliseconds: 500));
+            isCloudflare = await isCfChallenge();
           }
 
           if (!timedOut && !isCloudflare) {
@@ -118,7 +136,7 @@ class WebViewService {
       while (isCloudflare && !timedOut) {
         await Future.delayed(const Duration(seconds: 1));
         elapsed++;
-        timedOut = elapsed >= 15;
+        timedOut = elapsed >= 30;
       }
 
       try {
@@ -136,6 +154,20 @@ class WebViewService {
       } catch (_) {}
       return false;
     }
+  }
+
+  /// Public entry for the interactive challenge screen: once the user has
+  /// solved a challenge in a visible WebView, pull its cookies + User-Agent and
+  /// mark the domain cleared so subsequent requests carry cf_clearance.
+  Future<void> storeCookiesFrom(
+      String url, InAppWebViewController controller) async {
+    final ua =
+        (await controller.evaluateJavascript(source: 'navigator.userAgent'))
+                ?.toString() ??
+            '';
+    await _extractAndStoreCookies(url, ua, controller);
+    if (ua.isNotEmpty) await CookieStore().setUserAgent(ua);
+    _cleared.add(normalizeDomain(Uri.parse(url).host));
   }
 
   /// Extract ALL cookies (including HttpOnly like cf_clearance)
@@ -262,6 +294,10 @@ class WebViewService {
   /// Fetch HTML content from a URL, handling Cloudflare automatically.
   /// Used by the HTTP bridge for page content.
   Future<String?> fetchHtml(String url) async {
+    if (Platform.isWindows) {
+      debugPrint('[WebView] fetchHtml skipped on Windows');
+      return null;
+    }
     // Ensure Cloudflare is resolved first
     final domain = normalizeDomain(Uri.parse(url).host);
     if (!_cleared.contains(domain)) {
@@ -315,37 +351,67 @@ class WebViewService {
   /// Uses JS injection (XMLHttpRequest + fetch override) for cross-platform support.
   /// Returns the full captured URL string, or null on timeout.
   Future<String?> captureRequest(String url, String pattern, {int timeoutSeconds = 15}) async {
+    if (Platform.isWindows) {
+      debugPrint('[WebView] captureRequest skipped on Windows');
+      return null;
+    }
     debugPrint('[WebView] captureRequest: loading $url, watching for "$pattern"');
     HeadlessInAppWebView? webView;
     String? captured;
     bool done = false;
 
-    // JS that overrides XMLHttpRequest.open and fetch to capture matching URLs
+    // JS that captures matching URLs from XHR, fetch, and <video src> changes.
     const captureJs = '''
       (function() {
         if (window.__vrfCaptured) return;
         window.__vrfCaptured = '';
+
+        function _capture(u) {
+          if (!u || window.__vrfCaptured) return;
+          var s = u.toString();
+          if (s.indexOf('PATTERN') === -1) return;
+          if (!s.startsWith('http')) s = window.location.origin + s;
+          window.__vrfCaptured = s;
+        }
+
+        // 1. XHR intercept
         var origOpen = XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open = function(method, url) {
-          if (url && url.toString().indexOf('PATTERN') !== -1 && !window.__vrfCaptured) {
-            window.__vrfCaptured = url.toString();
-            if (!window.__vrfCaptured.startsWith('http')) {
-              window.__vrfCaptured = window.location.origin + window.__vrfCaptured;
-            }
-          }
+          _capture(url);
           return origOpen.apply(this, arguments);
         };
+
+        // 2. fetch intercept
         var origFetch = window.fetch;
         window.fetch = function(url, opts) {
           var s = (typeof url === 'string') ? url : (url && url.url ? url.url : '');
-          if (s.indexOf('PATTERN') !== -1 && !window.__vrfCaptured) {
-            window.__vrfCaptured = s;
-            if (!window.__vrfCaptured.startsWith('http')) {
-              window.__vrfCaptured = window.location.origin + window.__vrfCaptured;
-            }
-          }
+          _capture(s);
           return origFetch.apply(this, arguments);
         };
+
+        // 3. Check any existing <video> or <source> elements right now
+        function _checkVideoEls() {
+          document.querySelectorAll('video[src], video > source[src]').forEach(function(el) {
+            _capture(el.src || el.getAttribute('src'));
+          });
+        }
+        _checkVideoEls();
+
+        // 4. MutationObserver to catch dynamically added/changed video src
+        var obs = new MutationObserver(function(mutations) {
+          _checkVideoEls();
+          mutations.forEach(function(m) {
+            if (m.type === 'attributes' && m.attributeName === 'src') {
+              _capture(m.target.src || m.target.getAttribute('src'));
+            }
+          });
+        });
+        obs.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['src'],
+        });
       })();
     ''';
 
@@ -362,10 +428,13 @@ class WebViewService {
           userAgent: ua,
         ),
         onWebViewCreated: (controller) {
-          // Inject capture script as early as possible
+          // Inject into ALL frames (including iframes) as early as possible.
+          // Many video players embed in an iframe — forMainFrameOnly: false ensures
+          // the XHR/fetch intercept fires inside the player iframe too.
           controller.addUserScript(userScript: UserScript(
             source: jsToInject,
             injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+            forMainFrameOnly: false,
           ));
         },
         onLoadStop: (controller, loadedUrl) async {
@@ -373,17 +442,49 @@ class WebViewService {
           await controller.evaluateJavascript(source: jsToInject);
           await _extractAndStoreCookies(
               loadedUrl?.toString() ?? url, '', controller);
+          // Trigger video playback so the player actually fetches the stream.
+          // Many players require a user gesture; muting + play() bypasses that.
+          await controller.evaluateJavascript(source: '''
+            (function() {
+              document.querySelectorAll('video').forEach(function(v) {
+                v.muted = true;
+                try { v.play(); } catch(e) {}
+              });
+              // Also click common play-button selectors
+              var selectors = [
+                '.play-btn', '[class*="play-btn"]', '.vjs-play-button',
+                '.plyr__control--play', '[data-plyr="play"]',
+                '.jw-icon-display', '.fp-play', '.mejs__play button',
+              ];
+              for (var i = 0; i < selectors.length; i++) {
+                var btn = document.querySelector(selectors[i]);
+                if (btn) { btn.click(); break; }
+              }
+            })();
+          ''');
         },
       );
 
       await webView.run();
 
-      // Poll for the captured URL
+      // Poll for the captured URL; also check video.currentSrc each tick
       for (var i = 0; i < timeoutSeconds * 4 && !done; i++) {
         await Future.delayed(const Duration(milliseconds: 250));
         try {
+          // Check both our hooked __vrfCaptured and video.currentSrc directly
           final result = await webView!.webViewController?.evaluateJavascript(
-              source: 'window.__vrfCaptured || ""');
+              source: '''
+                (function() {
+                  if (window.__vrfCaptured) return window.__vrfCaptured;
+                  // Also try reading currentSrc from any video element
+                  var vids = document.querySelectorAll('video');
+                  for (var i = 0; i < vids.length; i++) {
+                    var cs = vids[i].currentSrc || vids[i].src;
+                    if (cs && cs.indexOf('PATTERN') !== -1 && !cs.startsWith('blob:')) return cs;
+                  }
+                  return '';
+                })()
+              '''.replaceAll('PATTERN', pattern));
           if (result != null && result.toString().isNotEmpty && result.toString() != '""' && result.toString() != 'null') {
             captured = result.toString();
             // Strip surrounding quotes if present

@@ -7,7 +7,11 @@ import '../presentation/global_search_screen/global_search_screen.dart';
 import '../presentation/source_catalog_screen/source_catalog_screen.dart';
 import '../presentation/manga_detail_screen/manga_detail_screen.dart';
 import '../presentation/reader_screen/reader_screen.dart';
+import '../presentation/player_screen/player_screen.dart';
 import '../presentation/webview_screen/webview_screen.dart';
+import '../presentation/source_creator_screen/source_creator_screen.dart';
+import '../presentation/repoforge_hub_screen/repoforge_hub_screen.dart';
+import '../presentation/novel_reader_screen/novel_reader_screen.dart';
 
 class AppRoutes {
   static const String library = '/';
@@ -18,7 +22,11 @@ class AppRoutes {
   static const String sourceCatalog = '/source-catalog';
   static const String mangaDetail = '/manga-detail';
   static const String reader = '/reader';
+  static const String player = '/player';
   static const String webview = '/webview';
+  static const String sourceCreator = '/source-creator';
+  static const String repoForgeHub = '/repoforge';
+  static const String novelReader = '/novel-reader';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -65,6 +73,37 @@ class AppRoutes {
             chapters: args['chapters'] as List<Map<String, dynamic>>?,
             currentIndex: args['currentIndex'] as int? ?? 0,
             startPage: args['startPage'] as int? ?? 0,
+          ),
+          settings,
+        );
+      case player:
+        final args = settings.arguments as Map<String, dynamic>;
+        return _scaleFade(
+          PlayerScreen(
+            sourceId: args['sourceId'] as String,
+            episodeUrl: args['episodeUrl'] as String,
+            episodeTitle: args['episodeTitle'] as String?,
+            animeTitle: args['animeTitle'] as String?,
+          ),
+          settings,
+        );
+      case sourceCreator:
+        final args = settings.arguments;
+        final seedUrl =
+            args is Map<String, dynamic> ? args['seedUrl'] as String? : null;
+        return _fadeSlide(SourceCreatorScreen(seedUrl: seedUrl), settings);
+      case repoForgeHub:
+        return _fadeSlide(const RepoForgeHubScreen(), settings);
+      case novelReader:
+        final args = settings.arguments as Map<String, dynamic>;
+        return _scaleFade(
+          NovelReaderScreen(
+            chapterUrl: args['chapterUrl'] as String,
+            sourceId: args['sourceId'] as String,
+            chapterTitle: args['chapterTitle'] as String?,
+            mangaTitle: args['mangaTitle'] as String?,
+            chapters: (args['chapters'] as List?)?.cast<Map<String, dynamic>>(),
+            currentIndex: args['currentIndex'] as int? ?? 0,
           ),
           settings,
         );

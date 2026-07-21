@@ -81,8 +81,13 @@ class _AppNavigationState extends State<AppNavigation>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final width = MediaQuery.of(context).size.width;
+    final mq = MediaQuery.of(context);
+    final width = mq.size.width;
     final tabWidth = width / _items.length;
+    // Use viewPadding so the bottom inset is preserved even when an ancestor
+    // (e.g. Scaffold) has consumed MediaQuery.padding. Adds a small floor so
+    // labels don't sit flush against the gesture bar on devices that report 0.
+    final bottomInset = mq.viewPadding.bottom > 0 ? mq.viewPadding.bottom : 8.0;
 
     return Container(
       decoration: BoxDecoration(
@@ -95,13 +100,11 @@ class _AppNavigationState extends State<AppNavigation>
           ),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.only(bottom: 4),
-        child: SizedBox(
-          height: 64,
-          child: Stack(
-            children: [
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SizedBox(
+        height: 64,
+        child: Stack(
+          children: [
               // Snake indicator
               AnimatedBuilder(
                 animation: _snakeAnimation,
@@ -193,8 +196,7 @@ class _AppNavigationState extends State<AppNavigation>
                   );
                 }),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

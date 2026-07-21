@@ -7,8 +7,10 @@ import 'm_chapter.dart';
 import 'm_source.dart';
 import 'm_status.dart';
 import 'm_provider.dart';
+import 'm_video.dart';
 import 'filter.dart';
 import 'source_preference.dart';
+import 'webview.dart';
 
 class RegistrerBridge {
   static void registerBridge(D4rt interpreter) {
@@ -23,6 +25,9 @@ class RegistrerBridge {
       interpreter.registerBridgedClass(HttpBridge.bridgedClass, lib);
       interpreter.registerBridgedClass(HttpResponseBridge.bridgedClass, lib);
 
+      // WebView (captureRequest, fetchHtml for dynamic video extraction)
+      interpreter.registerBridgedClass(WebViewBridge.bridgedClass, lib);
+
       // DOM
       interpreter.registerBridgedClass(DocumentBridge.bridgedClass, lib);
       interpreter.registerBridgedClass(ElementBridge.bridgedClass, lib);
@@ -32,6 +37,8 @@ class RegistrerBridge {
       interpreter.registerBridgedClass(MPagesBridge.bridgedClass, lib);
       interpreter.registerBridgedClass(MChapterBridge.bridgedClass, lib);
       interpreter.registerBridgedClass(MSourceBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(MVideoBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(MTrackBridge.bridgedClass, lib);
 
       // MProvider base class
       interpreter.registerBridgedClass(MProviderBridge.bridgedClass, lib);

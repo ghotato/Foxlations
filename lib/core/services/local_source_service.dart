@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Represents a locally stored manga series.
@@ -62,6 +64,16 @@ class LocalSourceService {
   static const _foldersKey = 'local_source_folders';
   static const _imageExts = {'jpg', 'jpeg', 'png', 'webp', 'gif'};
   static const _archiveExts = {'cbz', 'zip', 'cbr', 'rar', 'epub'};
+  static const _docExts = {'pdf'};
+
+  /// Extensions accepted by single-file import / recognised as a chapter file.
+  static Set<String> get importableExts => {..._archiveExts, ..._docExts};
+
+  /// Sanitize a string for use as a directory/file name.
+  String _sanitize(String name) => name
+      .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+      .replaceAll(RegExp(r'\.+$'), '')
+      .trim();
 
   /// Get saved local source folder paths.
   Future<List<String>> getFolders() async {
@@ -163,11 +175,11 @@ class LocalSourceService {
         final name = entity.path.split('/').last.split('\\').last;
         // Skip cover and details files
         if (name.startsWith('cover.') || name == 'details.json') continue;
-        if (_archiveExts.contains(ext)) {
+        if (_archiveExts.contains(ext) || _docExts.contains(ext)) {
           chapters.add(LocalChapter(
             name: name.replaceAll(RegExp(r'\.[^.]+$'), ''), // strip extension
             path: entity.path,
-            isArchive: true,
+            isArchive: true, // "isArchive" == needs extraction/rasterization
           ));
         }
       }
@@ -240,6 +252,11 @@ class LocalSourceService {
     final file = File(archivePath);
     if (!await file.exists()) return [];
 
+    // PDFs aren't archives — rasterize their pages to images instead.
+    if (ext == 'pdf') {
+      return _rasterizePdfPages(archivePath);
+    }
+
     try {
       final bytes = await file.readAsBytes();
       Archive archive;
@@ -247,12 +264,25 @@ class LocalSourceService {
       if (ext == 'cbz' || ext == 'zip') {
         archive = ZipDecoder().decodeBytes(bytes);
       } else if (ext == 'cbr' || ext == 'rar') {
-        // archive package doesn't support RAR natively
-        // Fall back to treating as ZIP (some .cbr files are actually ZIP)
+        // The `archive` package can't decode real RAR. Many .cbr files are
+        // actually ZIP-packed, so try ZIP first; a true RAR (magic
+        // "Rar!\x1a\x07") cannot be read and is reported clearly.
+        final isRealRar = bytes.length >= 7 &&
+            bytes[0] == 0x52 &&
+            bytes[1] == 0x61 &&
+            bytes[2] == 0x72 &&
+            bytes[3] == 0x21 &&
+            bytes[4] == 0x1A &&
+            bytes[5] == 0x07;
+        if (isRealRar) {
+          debugPrint('[LocalSource] True RAR archives are unsupported — '
+              'repack as CBZ/ZIP: $archivePath');
+          return [];
+        }
         try {
           archive = ZipDecoder().decodeBytes(bytes);
         } catch (_) {
-          debugPrint('[LocalSource] RAR format not supported: $archivePath');
+          debugPrint('[LocalSource] Could not read .$ext as ZIP: $archivePath');
           return [];
         }
       } else if (ext == 'epub') {
@@ -322,6 +352,85 @@ class LocalSourceService {
     } catch (e) {
       debugPrint('[LocalSource] EPUB extraction error: $e');
       return [];
+    }
+  }
+
+  /// Rasterize each page of a PDF to a PNG image (cached next to the PDF).
+  /// Uses the platform PDF renderer (Android/iOS/desktop) via `printing`; on
+  /// platforms without a rasterizer this returns an empty list.
+  Future<List<String>> _rasterizePdfPages(String pdfPath) async {
+    final file = File(pdfPath);
+    if (!await file.exists()) return [];
+
+    final tempDir = Directory('${pdfPath}_pages');
+    // Reuse a previous rasterization if present.
+    if (await tempDir.exists()) {
+      final cached = await _getImagePaths(tempDir);
+      if (cached.isNotEmpty) return cached;
+    }
+
+    try {
+      final bytes = await file.readAsBytes();
+      await tempDir.create(recursive: true);
+      final pages = <String>[];
+      int i = 0;
+      await for (final page in Printing.raster(bytes, dpi: 150)) {
+        final png = await page.toPng();
+        final outPath =
+            '${tempDir.path}/${(i + 1).toString().padLeft(3, '0')}.png';
+        await File(outPath).writeAsBytes(png);
+        pages.add(outPath);
+        i++;
+      }
+      return pages;
+    } catch (e) {
+      debugPrint('[LocalSource] PDF rasterization failed '
+          '(needs a platform PDF renderer): $e');
+      return [];
+    }
+  }
+
+  /// Base directory that holds single-file imports. Registered as a scanned
+  /// local folder so imported files show up alongside folder-based sources.
+  Future<String> _importBaseDir() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final base = '${docs.path}/Foxlations/local_import';
+    await Directory(base).create(recursive: true);
+    return base;
+  }
+
+  /// Import a single archive/PDF file (picked by the user) as a local manga.
+  ///
+  /// The file is copied into a managed per-title folder under app documents so
+  /// the normal folder scanner picks it up as a one-chapter series. Returns the
+  /// derived title, or null if the type is unsupported / the copy fails.
+  Future<String?> importFile(String sourcePath) async {
+    final ext = sourcePath.split('.').last.toLowerCase();
+    if (!importableExts.contains(ext)) {
+      debugPrint('[LocalSource] Unsupported import type: .$ext');
+      return null;
+    }
+    final src = File(sourcePath);
+    if (!await src.exists()) return null;
+
+    try {
+      final fileName = sourcePath.split('/').last.split('\\').last;
+      final title = _sanitize(fileName.replaceAll(RegExp(r'\.[^.]+$'), ''));
+      if (title.isEmpty) return null;
+
+      final base = await _importBaseDir();
+      final mangaDir = Directory('$base/$title');
+      await mangaDir.create(recursive: true);
+      final dest = '${mangaDir.path}/$fileName';
+      await src.copy(dest);
+
+      // Ensure the managed import dir is scanned.
+      await addFolder(base);
+      debugPrint('[LocalSource] Imported "$fileName" -> $dest');
+      return title;
+    } catch (e) {
+      debugPrint('[LocalSource] Import failed for $sourcePath: $e');
+      return null;
     }
   }
 }

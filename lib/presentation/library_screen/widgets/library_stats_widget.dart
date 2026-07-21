@@ -85,6 +85,23 @@ class _StatsContent extends StatelessWidget {
       ..sort((a, b) => b.readChapters.compareTo(a.readChapters));
     final topSeries = sorted.take(3).toList();
 
+    // Pull real reading-history stats from the active provider so the
+    // streak and heatmap reflect actual reads instead of hardcoded zeros.
+    final int currentStreak;
+    final int longestStreak;
+    final Map<DateTime, int> activity;
+    if (isVault) {
+      final vault = context.read<VaultProvider>();
+      currentStreak = vault.getCurrentReadingStreak();
+      longestStreak = vault.getLongestReadingStreak();
+      activity = vault.getReadActivityByDay(days: 35);
+    } else {
+      final library = context.read<LibraryProvider>();
+      currentStreak = library.getCurrentReadingStreak();
+      longestStreak = library.getLongestReadingStreak();
+      activity = library.getReadActivityByDay(days: 35);
+    }
+
     final cs = Theme.of(context).colorScheme;
 
     return FadeTransition(
@@ -113,9 +130,12 @@ class _StatsContent extends StatelessWidget {
             totalChapters: totalChapters,
           ),
           const SizedBox(height: 16),
-          _StreakCard(),
+          _StreakCard(
+            currentStreak: currentStreak,
+            longestStreak: longestStreak,
+          ),
           const SizedBox(height: 16),
-          _ActivityHeatmap(),
+          _ActivityHeatmap(activity: activity),
           const SizedBox(height: 16),
           if (statusCounts.isNotEmpty) ...[
             _LibraryBreakdownCard(
@@ -276,12 +296,17 @@ class _StatTile extends StatelessWidget {
 
 // ── Streak Card ──────────────────────────────────────────────
 class _StreakCard extends StatelessWidget {
+  final int currentStreak;
+  final int longestStreak;
+
+  const _StreakCard({
+    required this.currentStreak,
+    required this.longestStreak,
+  });
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    // Streaks will be computed from real reading data later
-    const currentStreak = 0;
-    const longestStreak = 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -332,7 +357,11 @@ class _StreakCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Start a streak by reading today!',
+            currentStreak == 0
+                ? 'Start a streak by reading today!'
+                : currentStreak == 1
+                    ? 'Read tomorrow to keep the streak going!'
+                    : '$currentStreak days strong — keep it up!',
             style: GoogleFonts.manrope(fontSize: 12, color: cs.outline),
           ),
         ],
@@ -393,6 +422,10 @@ class _StreakBar extends StatelessWidget {
 
 // ── Activity Heatmap ─────────────────────────────────────────
 class _ActivityHeatmap extends StatelessWidget {
+  final Map<DateTime, int> activity;
+
+  const _ActivityHeatmap({required this.activity});
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -404,9 +437,6 @@ class _ActivityHeatmap extends StatelessWidget {
     for (int i = 34; i >= 0; i--) {
       days.add(today.subtract(Duration(days: i)));
     }
-
-    // Empty activity for now — will be populated with real reading data
-    final Map<DateTime, int> activity = {};
 
     const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 

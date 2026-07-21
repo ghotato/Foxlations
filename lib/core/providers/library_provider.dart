@@ -22,6 +22,14 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-read the library from disk (e.g. after a backup restore wrote directly
+  /// to the Hive boxes) without re-initializing the service.
+  Future<void> reload() async {
+    _manga = _libraryService.getAllManga();
+    _categories = _libraryService.getCategories();
+    notifyListeners();
+  }
+
   // ── Category management ─────────────────────────────────────
   Future<void> addCategory(String name) async {
     await _libraryService.addCategory(name);
@@ -126,4 +134,11 @@ class LibraryProvider extends ChangeNotifier {
     _manga = _libraryService.getAllManga();
     notifyListeners();
   }
+
+  // ── Reading stats ──────────────────────────────────────────────────
+  Map<DateTime, int> getReadActivityByDay({int days = 365}) =>
+      _libraryService.getReadActivityByDay(days: days);
+
+  int getCurrentReadingStreak() => _libraryService.getCurrentReadingStreak();
+  int getLongestReadingStreak() => _libraryService.getLongestReadingStreak();
 }

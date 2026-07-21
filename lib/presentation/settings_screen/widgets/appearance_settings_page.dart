@@ -247,6 +247,11 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
             primaryColor: primaryColor,
             onToggle: () => themeProvider.toggleTheme(),
           ),
+          _InvertColorsTile(
+            value: themeProvider.invertColors,
+            primaryColor: primaryColor,
+            onChanged: themeProvider.setInvertColors,
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -391,6 +396,81 @@ class _BreedTile extends StatelessWidget {
                   ? const Icon(Icons.check_rounded,
                       size: 14, color: Colors.white)
                   : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Invert Colors Tile ───────────────────────────────────────
+class _InvertColorsTile extends StatelessWidget {
+  final bool value;
+  final Color primaryColor;
+  final ValueChanged<bool> onChanged;
+
+  const _InvertColorsTile({
+    required this.value,
+    required this.primaryColor,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: primaryColor.withAlpha(25),
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              child: Icon(
+                Icons.invert_colors_rounded,
+                color: primaryColor,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Invert Colors',
+                    style: GoogleFonts.manrope(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Inverts the entire app UI',
+                    style: GoogleFonts.manrope(
+                        fontSize: 12, color: cs.outline),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: cs.onPrimary,
+              activeTrackColor: primaryColor,
             ),
           ],
         ),

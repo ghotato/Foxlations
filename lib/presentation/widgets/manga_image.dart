@@ -12,6 +12,7 @@ class MangaImage extends StatefulWidget {
   final double? height;
   final Widget? placeholder;
   final Widget? errorWidget;
+  final Uint8List? translatedBytes;
 
   const MangaImage({
     super.key,
@@ -22,6 +23,7 @@ class MangaImage extends StatefulWidget {
     this.height,
     this.placeholder,
     this.errorWidget,
+    this.translatedBytes,
   });
 
   @override
@@ -75,11 +77,14 @@ class _MangaImageState extends State<MangaImage>
       if (mounted) setState(() { _loading = true; _error = false; });
     }
 
-    // Ensure Referer has www. prefix and trailing slash — CDNs require it
+    // Build referer: if explicitly provided, use as-is (source knows best).
+    // If falling back to imageUrl, add www. — many CDNs require it.
     var referer = widget.referer ?? widget.imageUrl;
-    final uri = Uri.tryParse(referer);
-    if (uri != null && !uri.host.startsWith('www.')) {
-      referer = referer.replaceFirst('://${uri.host}', '://www.${uri.host}');
+    if (widget.referer == null) {
+      final uri = Uri.tryParse(referer);
+      if (uri != null && !uri.host.startsWith('www.')) {
+        referer = referer.replaceFirst('://${uri.host}', '://www.${uri.host}');
+      }
     }
     if (!referer.endsWith('/')) referer = '$referer/';
 
@@ -106,8 +111,9 @@ class _MangaImageState extends State<MangaImage>
     if (_error || _bytes == null) {
       return widget.errorWidget ?? _defaultError(context);
     }
+    final displayBytes = widget.translatedBytes ?? _bytes!;
     return Image.memory(
-      _bytes!,
+      displayBytes,
       fit: widget.fit,
       width: widget.width,
       height: widget.height,

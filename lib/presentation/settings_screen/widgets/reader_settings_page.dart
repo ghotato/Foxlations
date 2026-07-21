@@ -1,6 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../theme/app_theme.dart';
+
+/// Reader preference keys. The reader screen and ReaderProvider read from
+/// these same keys, so toggling here takes effect on the next chapter open.
+class ReaderPrefs {
+  // Stored as int (ReadingMode enum index). Same key the reader uses.
+  static const readingMode = 'reader_reading_mode';
+  static const scaleType = 'reader_scale_type';
+  static const zoomStart = 'reader_zoom_start';
+  static const navLayout = 'reader_nav_layout';
+  static const bgColor = 'reader_bg_color';
+  static const pageTransition = 'reader_page_transition';
+  static const keepScreenOn = 'reader_keep_screen_on';
+  static const showPageNumber = 'reader_show_page_num';
+  static const fullscreen = 'reader_fullscreen';
+  static const cropBorders = 'reader_crop_borders';
+  static const grayscale = 'reader_grayscale';
+  static const invertColors = 'reader_invert_colors';
+  static const invertTapZones = 'reader_invert_tap';
+  static const volumeKeys = 'reader_volume_keys';
+  static const autoPreload = 'reader_auto_preload';
+  static const fontSize = 'reader_font_size';
+  static const imageZoom = 'reader_image_zoom';
+}
+
+/// Reading mode labels — kept in sync with [ReadingMode] enum order
+/// (ltr, rtl, vertical, webtoon) so the int index round-trips cleanly.
+const _readingModeLabels = ['LTR', 'RTL', 'Vertical', 'Webtoon'];
 
 class ReaderSettingsPage extends StatefulWidget {
   const ReaderSettingsPage({super.key});
@@ -9,7 +37,7 @@ class ReaderSettingsPage extends StatefulWidget {
 }
 
 class _ReaderSettingsPageState extends State<ReaderSettingsPage> {
-  String _readingMode = 'Paginated';
+  String _readingMode = 'LTR';
   String _scaleType = 'Fit Screen';
   String _zoomStart = 'Automatic';
   String _navLayout = 'Right & Left';
@@ -26,6 +54,53 @@ class _ReaderSettingsPageState extends State<ReaderSettingsPage> {
   bool _autoPreload = true;
   double _fontSize = 16.0;
   double _imageZoom = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() {
+      // ReaderProvider stores reading mode as ReadingMode enum index.
+      final modeIdx = (p.getInt(ReaderPrefs.readingMode) ?? 0)
+          .clamp(0, _readingModeLabels.length - 1);
+      _readingMode = _readingModeLabels[modeIdx];
+      _scaleType = p.getString(ReaderPrefs.scaleType) ?? 'Fit Screen';
+      _zoomStart = p.getString(ReaderPrefs.zoomStart) ?? 'Automatic';
+      _navLayout = p.getString(ReaderPrefs.navLayout) ?? 'Right & Left';
+      _bgColor = p.getString(ReaderPrefs.bgColor) ?? 'Black';
+      _pageTransition = p.getString(ReaderPrefs.pageTransition) ?? 'Slide';
+      _keepScreenOn = p.getBool(ReaderPrefs.keepScreenOn) ?? true;
+      _showPageNumber = p.getBool(ReaderPrefs.showPageNumber) ?? true;
+      _fullscreen = p.getBool(ReaderPrefs.fullscreen) ?? true;
+      _cropBorders = p.getBool(ReaderPrefs.cropBorders) ?? false;
+      _grayscale = p.getBool(ReaderPrefs.grayscale) ?? false;
+      _invertColors = p.getBool(ReaderPrefs.invertColors) ?? false;
+      _invertTapZones = p.getBool(ReaderPrefs.invertTapZones) ?? false;
+      _volumeKeys = p.getBool(ReaderPrefs.volumeKeys) ?? false;
+      _autoPreload = p.getBool(ReaderPrefs.autoPreload) ?? true;
+      _fontSize = p.getDouble(ReaderPrefs.fontSize) ?? 16.0;
+      _imageZoom = p.getDouble(ReaderPrefs.imageZoom) ?? 1.0;
+    });
+  }
+
+  Future<void> _setBool(String key, bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(key, value);
+  }
+
+  Future<void> _setString(String key, String value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(key, value);
+  }
+
+  Future<void> _setDouble(String key, double value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble(key, value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,70 +121,125 @@ class _ReaderSettingsPageState extends State<ReaderSettingsPage> {
           _SectionHeader(title: 'Preferences'),
           _SegmentedTile(icon: Icons.auto_stories_rounded, iconColor: cs.primary,
               title: 'Reading Mode',
-              options: const ['Paginated', 'Scroll', 'Webtoon', 'LTR', 'RTL'],
+              options: _readingModeLabels,
               selected: _readingMode,
-              onChanged: (v) => setState(() => _readingMode = v)),
+              onChanged: (v) async {
+                setState(() => _readingMode = v);
+                final idx = _readingModeLabels.indexOf(v);
+                if (idx >= 0) {
+                  final p = await SharedPreferences.getInstance();
+                  await p.setInt(ReaderPrefs.readingMode, idx);
+                }
+              }),
           _SliderTile(icon: Icons.text_fields_rounded, iconColor: cs.primary,
               title: 'Font Size', value: _fontSize, min: 10, max: 24, divisions: 14,
-              onChanged: (v) => setState(() => _fontSize = v)),
+              onChanged: (v) {
+                setState(() => _fontSize = v);
+                _setDouble(ReaderPrefs.fontSize, v);
+              }),
           _SliderTile(icon: Icons.zoom_in_rounded, iconColor: cs.primary,
               title: 'Image Zoom', value: _imageZoom, min: 1.0, max: 3.0, divisions: 20,
-              onChanged: (v) => setState(() => _imageZoom = v)),
+              onChanged: (v) {
+                setState(() => _imageZoom = v);
+                _setDouble(ReaderPrefs.imageZoom, v);
+              }),
           _SwitchTile(icon: Icons.skip_next_rounded, iconColor: cs.primary,
               title: 'Auto-Preload Next Chapter', subtitle: 'Load next chapter in background',
-              value: _autoPreload, onChanged: (v) => setState(() => _autoPreload = v)),
+              value: _autoPreload, onChanged: (v) {
+                setState(() => _autoPreload = v);
+                _setBool(ReaderPrefs.autoPreload, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Reading Mode'),
           _SwitchTile(icon: Icons.crop_rounded, iconColor: cs.primary,
               title: 'Crop Borders', subtitle: 'Remove white borders from pages',
-              value: _cropBorders, onChanged: (v) => setState(() => _cropBorders = v)),
+              value: _cropBorders, onChanged: (v) {
+                setState(() => _cropBorders = v);
+                _setBool(ReaderPrefs.cropBorders, v);
+              }),
           _SwitchTile(icon: Icons.filter_b_and_w_rounded, iconColor: cs.primary,
               title: 'Grayscale', subtitle: 'Display pages in grayscale',
-              value: _grayscale, onChanged: (v) => setState(() => _grayscale = v)),
+              value: _grayscale, onChanged: (v) {
+                setState(() => _grayscale = v);
+                _setBool(ReaderPrefs.grayscale, v);
+              }),
           _SwitchTile(icon: Icons.invert_colors_rounded, iconColor: cs.primary,
               title: 'Invert Colors', subtitle: 'Swap light and dark colors',
-              value: _invertColors, onChanged: (v) => setState(() => _invertColors = v)),
+              value: _invertColors, onChanged: (v) {
+                setState(() => _invertColors = v);
+                _setBool(ReaderPrefs.invertColors, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Display'),
           _ChoiceTile(icon: Icons.aspect_ratio_rounded, iconColor: AppTheme.success,
               title: 'Scale Type', value: _scaleType,
               options: const ['Fit Screen', 'Stretch', 'Fit Width', 'Fit Height', 'Original Size', 'Smart Fit'],
-              onChanged: (v) => setState(() => _scaleType = v)),
+              onChanged: (v) {
+                setState(() => _scaleType = v);
+                _setString(ReaderPrefs.scaleType, v);
+              }),
           _ChoiceTile(icon: Icons.zoom_out_map_rounded, iconColor: AppTheme.success,
               title: 'Zoom Start Position', value: _zoomStart,
               options: const ['Automatic', 'Left', 'Right', 'Center'],
-              onChanged: (v) => setState(() => _zoomStart = v)),
+              onChanged: (v) {
+                setState(() => _zoomStart = v);
+                _setString(ReaderPrefs.zoomStart, v);
+              }),
           _ChoiceTile(icon: Icons.format_color_fill_rounded, iconColor: AppTheme.success,
               title: 'Background Color', value: _bgColor,
               options: const ['Black', 'Gray', 'White', 'Automatic'],
-              onChanged: (v) => setState(() => _bgColor = v)),
+              onChanged: (v) {
+                setState(() => _bgColor = v);
+                _setString(ReaderPrefs.bgColor, v);
+              }),
           _SwitchTile(icon: Icons.brightness_high_rounded, iconColor: AppTheme.success,
               title: 'Keep Screen On', subtitle: 'Prevent screen from sleeping',
-              value: _keepScreenOn, onChanged: (v) => setState(() => _keepScreenOn = v)),
+              value: _keepScreenOn, onChanged: (v) {
+                setState(() => _keepScreenOn = v);
+                _setBool(ReaderPrefs.keepScreenOn, v);
+              }),
           _SwitchTile(icon: Icons.numbers_rounded, iconColor: AppTheme.success,
               title: 'Show Page Number', subtitle: 'Display page indicator overlay',
-              value: _showPageNumber, onChanged: (v) => setState(() => _showPageNumber = v)),
+              value: _showPageNumber, onChanged: (v) {
+                setState(() => _showPageNumber = v);
+                _setBool(ReaderPrefs.showPageNumber, v);
+              }),
           _SwitchTile(icon: Icons.fullscreen_rounded, iconColor: AppTheme.success,
               title: 'Fullscreen', subtitle: 'Hide system bars while reading',
-              value: _fullscreen, onChanged: (v) => setState(() => _fullscreen = v)),
+              value: _fullscreen, onChanged: (v) {
+                setState(() => _fullscreen = v);
+                _setBool(ReaderPrefs.fullscreen, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Navigation'),
           _ChoiceTile(icon: Icons.touch_app_rounded, iconColor: AppTheme.secondary,
               title: 'Navigation Layout', value: _navLayout,
               options: const ['Right & Left', 'L-shaped', 'Kindle-like', 'Edge', 'Disabled'],
-              onChanged: (v) => setState(() => _navLayout = v)),
+              onChanged: (v) {
+                setState(() => _navLayout = v);
+                _setString(ReaderPrefs.navLayout, v);
+              }),
           _SwitchTile(icon: Icons.swap_horiz_rounded, iconColor: AppTheme.secondary,
               title: 'Invert Tap Zones', subtitle: 'Swap left/right tap navigation',
-              value: _invertTapZones, onChanged: (v) => setState(() => _invertTapZones = v)),
+              value: _invertTapZones, onChanged: (v) {
+                setState(() => _invertTapZones = v);
+                _setBool(ReaderPrefs.invertTapZones, v);
+              }),
           _SwitchTile(icon: Icons.volume_up_rounded, iconColor: AppTheme.secondary,
               title: 'Volume Keys', subtitle: 'Use volume buttons to navigate pages',
-              value: _volumeKeys, onChanged: (v) => setState(() => _volumeKeys = v)),
+              value: _volumeKeys, onChanged: (v) {
+                setState(() => _volumeKeys = v);
+                _setBool(ReaderPrefs.volumeKeys, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Transitions'),
           _ChoiceTile(icon: Icons.animation_rounded, iconColor: AppTheme.warning,
               title: 'Page Transition', value: _pageTransition,
               options: const ['Slide', 'Fade', 'None'],
-              onChanged: (v) => setState(() => _pageTransition = v)),
+              onChanged: (v) {
+                setState(() => _pageTransition = v);
+                _setString(ReaderPrefs.pageTransition, v);
+              }),
           const SizedBox(height: 24),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data' show BytesBuilder;
 import 'package:flutter/foundation.dart';
 import 'package:d4rt/d4rt.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
@@ -29,6 +30,17 @@ class HttpBridge {
           final headers =
               (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
           return await client.get(url, headers: headers);
+        },
+        // Returns the raw response body as a List<int> (bytes 0-255).
+        // Required for sources that consume binary endpoints (e.g. Hitomi's
+        // .nozomi gallery indices). Headers are forwarded so callers can
+        // pass Range, Referer, etc.
+        'getBytes': (visitor, instance, positionalArgs, namedArgs) async {
+          final client = instance as _HttpClient;
+          final url = positionalArgs[0] as String;
+          final headers =
+              (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
+          return await client.getBytes(url, headers: headers);
         },
         'post': (visitor, instance, positionalArgs, namedArgs) async {
           final client = instance as _HttpClient;
@@ -82,6 +94,21 @@ class _HttpClient {
     return merged;
   }
 
+  // Returns true only if the 403 response looks like a Cloudflare challenge.
+  // Plain 403s (WAF blocks, auth-required pages) should not trigger WebView.
+  bool _isCloudflare(String body, Map<String, String> headers) {
+    final lcHeaders = headers.map((k, v) => MapEntry(k.toLowerCase(), v.toLowerCase()));
+    if (lcHeaders.containsKey('cf-ray')) return true;
+    if ((lcHeaders['server'] ?? '').contains('cloudflare')) return true;
+    final b = body.toLowerCase();
+    return b.contains('__cf_') ||
+        b.contains('cf-ray') ||
+        b.contains('cf_clearance') ||
+        b.contains('just a moment') ||
+        b.contains('checking your browser') ||
+        (b.contains('cloudflare') && b.contains('challenge'));
+  }
+
   Future<_HttpResponse> get(String url,
       {Map<String, String> headers = const {}}) async {
     final mergedHeaders = await _buildHeaders(url, headers);
@@ -94,6 +121,10 @@ class _HttpClient {
       );
       debugPrint('[HTTP] GET $url → ${response.statusCode} (${response.body.length} bytes)');
       if (response.statusCode == 403) {
+        if (!_isCloudflare(response.body, response.headerMap)) {
+          debugPrint('[HTTP] 403 for $url — not Cloudflare, returning as-is');
+          return _HttpResponse(body: response.body, statusCode: 403, headers: response.headerMap);
+        }
         return await _handleCloudflare(url, headers, 'GET');
       }
       return _HttpResponse(
@@ -112,6 +143,60 @@ class _HttpClient {
     }
   }
 
+  /// Returns the response body as a `List<int>` for binary endpoints. Used by
+  /// sources that consume non-text payloads (e.g. Hitomi's .nozomi files).
+  Future<List<int>> getBytes(String url,
+      {Map<String, String> headers = const {}}) async {
+    final mergedHeaders = await _buildHeaders(url, headers);
+    try {
+      final client = await _getClient();
+      final response = await client.requestBytes(
+        method: rhttp.HttpMethod.get,
+        url: url,
+        headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+      );
+      debugPrint(
+          '[HTTP] GET (bytes) $url → ${response.statusCode} (${response.body.length} bytes)');
+      // Convert Uint8List to List<int> so d4rt's bridge sees a plain List.
+      return List<int>.from(response.body);
+    } catch (e) {
+      // Same fallback as `get()`: rhttp's DNS resolver fails on some Windows
+      // configurations; fall back to Dart's HttpClient which uses the system
+      // resolver.
+      if (e.toString().contains('ConnectError') ||
+          e.toString().contains('dns error')) {
+        debugPrint(
+            '[HTTP] rhttp (bytes) failed, falling back to Dart HttpClient for $url');
+        return await _dartGetBytes(url, mergedHeaders);
+      }
+      debugPrint('[HTTP] GET (bytes) error for $url: $e');
+      rethrow;
+    }
+  }
+
+  /// Bytes-mode fallback using Dart's built-in HttpClient. Drains the
+  /// response stream into a single `List<int>` without any text decoding.
+  Future<List<int>> _dartGetBytes(
+      String url, Map<String, String> headers) async {
+    final httpClient = HttpClient();
+    httpClient.badCertificateCallback = (_, __, ___) => true;
+    try {
+      final request = await httpClient.getUrl(Uri.parse(url));
+      headers.forEach((k, v) => request.headers.set(k, v));
+      final response = await request.close();
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        builder.add(chunk);
+      }
+      final bytes = builder.takeBytes();
+      debugPrint(
+          '[HTTP] Dart GET (bytes) $url → ${response.statusCode} (${bytes.length} bytes)');
+      return List<int>.from(bytes);
+    } finally {
+      httpClient.close();
+    }
+  }
+
   /// Fallback GET using Dart's built-in HttpClient (for when rhttp DNS fails)
   Future<_HttpResponse> _dartGet(String url, Map<String, String> headers) async {
     final httpClient = HttpClient();
@@ -125,6 +210,9 @@ class _HttpClient {
       response.headers.forEach((name, values) => headerMap[name] = values.join(', '));
       debugPrint('[HTTP] Dart GET $url → ${response.statusCode} (${body.length} bytes)');
       if (response.statusCode == 403) {
+        if (!_isCloudflare(body, headerMap)) {
+          return _HttpResponse(body: body, statusCode: 403, headers: headerMap);
+        }
         return await _handleCloudflare(url, {}, 'GET');
       }
       return _HttpResponse(body: body, statusCode: response.statusCode, headers: headerMap);
@@ -168,6 +256,26 @@ class _HttpClient {
     String method, {
     dynamic body,
   }) async {
+    // On Windows, WebView can't extract HttpOnly cookies — skip all WebView steps.
+    // Try once with cached cookies; if still blocked, fail fast with a clear message.
+    if (Platform.isWindows) {
+      debugPrint('[HTTP] 403 CF on Windows for $url — trying cached cookies only');
+      final mergedHeaders = await _buildHeaders(url, originalHeaders);
+      try {
+        final client = await _getClient();
+        final response = await client.requestText(
+          method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+          url: url,
+          headers: rhttp.HttpHeaders.rawMap(mergedHeaders),
+          body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+        );
+        if (response.statusCode != 403) {
+          return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+        }
+      } catch (_) {}
+      throw Exception('This source is Cloudflare-protected and requires Android or iOS to access.');
+    }
+
     // In background isolate, can't spawn WebView — just retry with cookies or throw
     if (isBackgroundIsolate) {
       debugPrint('[HTTP] 403 in isolate for $url — retrying with cached cookies only');
@@ -268,13 +376,33 @@ class _HttpClient {
         }
       }
 
-      // Fall back to WebView HTML fetch
+      // Fall back to WebView HTML fetch (internally re-runs resolveCloudflare if needed)
       debugPrint('[HTTP] Falling back to WebView HTML fetch...');
       final html = await webViewService.fetchHtml(url);
       completer.complete(true);
       _cfLocks.remove(domain);
       if (html != null && html.isNotEmpty) {
         return _HttpResponse(body: html, statusCode: 200, headers: {});
+      }
+
+      // fetchHtml may have extracted fresh cookies even if it returned null —
+      // do one final rhttp retry before giving up.
+      debugPrint('[HTTP] fetchHtml returned null — final rhttp retry with fresh cookies...');
+      try {
+        final retryHeaders = await _buildHeaders(url, originalHeaders);
+        final client = await _getClient();
+        final response = await client.requestText(
+          method: method == 'POST' ? rhttp.HttpMethod.post : rhttp.HttpMethod.get,
+          url: url,
+          headers: rhttp.HttpHeaders.rawMap(retryHeaders),
+          body: method == 'POST' && body is String ? rhttp.HttpBody.text(body) : null,
+        );
+        debugPrint('[HTTP] Final retry → ${response.statusCode} (${response.body.length} bytes)');
+        if (response.statusCode != 403) {
+          return _HttpResponse(body: response.body, statusCode: response.statusCode, headers: response.headerMap);
+        }
+      } catch (e) {
+        debugPrint('[HTTP] Final rhttp retry failed: $e');
       }
     } catch (e) {
       completer.complete(false);

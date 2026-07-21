@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/source_model.dart';
 import '../models/installed_source_model.dart';
 import '../services/app_logger.dart';
@@ -6,6 +7,12 @@ import '../services/repo_service.dart';
 import '../services/source_manager.dart';
 
 class SourceProvider extends ChangeNotifier {
+  // Browse preference keys (also referenced from BrowseSettingsPage).
+  static const _showNsfwKey = 'browse_show_nsfw';
+  static const _pinnedOnlyBrowseKey = 'browse_pinned_only';
+  static const _pinnedOnlyGlobalSearchKey = 'browse_global_search_pinned_only';
+  static const _autoUpdateExtKey = 'browse_auto_update_extensions';
+
   final RepoService _repoService = RepoService();
   final SourceManager _sourceManager = SourceManager();
 
@@ -15,11 +22,22 @@ class SourceProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  // Browse preferences (persisted)
+  bool _showNsfw = false;
+  bool _pinnedOnlyBrowse = false;
+  bool _pinnedOnlyGlobalSearch = false;
+  bool _autoUpdateExtensions = false;
+
   List<String> get repoUrls => _repoUrls;
   Map<String, RepoIndexResult> get repoIndexes => _repoIndexes;
   List<InstalledSource> get installedSources => _installedSources;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  bool get showNsfw => _showNsfw;
+  bool get pinnedOnlyBrowse => _pinnedOnlyBrowse;
+  bool get pinnedOnlyGlobalSearch => _pinnedOnlyGlobalSearch;
+  bool get autoUpdateExtensions => _autoUpdateExtensions;
 
   /// All available sources across all repos.
   List<MangaSource> get allSources =>
@@ -31,6 +49,15 @@ class SourceProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Load browse preferences first so consumers see the right values on
+      // their initial build.
+      final prefs = await SharedPreferences.getInstance();
+      _showNsfw = prefs.getBool(_showNsfwKey) ?? false;
+      _pinnedOnlyBrowse = prefs.getBool(_pinnedOnlyBrowseKey) ?? false;
+      _pinnedOnlyGlobalSearch =
+          prefs.getBool(_pinnedOnlyGlobalSearchKey) ?? false;
+      _autoUpdateExtensions = prefs.getBool(_autoUpdateExtKey) ?? false;
+
       _repoUrls = await _repoService.getSavedRepos();
       _installedSources = await _sourceManager.getInstalledSources();
 
@@ -46,6 +73,45 @@ class SourceProvider extends ChangeNotifier {
     }
 
     _isLoading = false;
+    notifyListeners();
+
+    // If auto-update is on, refresh installed extension code in the
+    // background. Doesn't block the initial app load.
+    if (_autoUpdateExtensions) {
+      // ignore: unawaited_futures
+      refreshAllSourceCode();
+    }
+  }
+
+  Future<void> setShowNsfw(bool value) async {
+    if (_showNsfw == value) return;
+    _showNsfw = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showNsfwKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setPinnedOnlyBrowse(bool value) async {
+    if (_pinnedOnlyBrowse == value) return;
+    _pinnedOnlyBrowse = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_pinnedOnlyBrowseKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setPinnedOnlyGlobalSearch(bool value) async {
+    if (_pinnedOnlyGlobalSearch == value) return;
+    _pinnedOnlyGlobalSearch = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_pinnedOnlyGlobalSearchKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setAutoUpdateExtensions(bool value) async {
+    if (_autoUpdateExtensions == value) return;
+    _autoUpdateExtensions = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoUpdateExtKey, value);
     notifyListeners();
   }
 
@@ -119,6 +185,27 @@ class SourceProvider extends ChangeNotifier {
     await _sourceManager.uninstallSource(sourceId);
     _installedSources = await _sourceManager.getInstalledSources();
     notifyListeners();
+  }
+
+  /// Re-downloads a single installed source's code from its remote URL.
+  Future<void> refreshSourceCode(String sourceId) async {
+    try {
+      await _sourceManager.refreshSourceCode(sourceId);
+      _installedSources = await _sourceManager.getInstalledSources();
+      notifyListeners();
+    } catch (e) {
+      _error = 'Refresh failed: $e';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Re-downloads every installed source's code. Returns how many succeeded.
+  Future<int> refreshAllSourceCode() async {
+    final count = await _sourceManager.refreshAllSourceCode();
+    _installedSources = await _sourceManager.getInstalledSources();
+    notifyListeners();
+    return count;
   }
 
   bool isInstalled(String sourceId) => _sourceManager.isInstalled(sourceId);

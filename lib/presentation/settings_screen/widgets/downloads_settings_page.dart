@@ -60,6 +60,40 @@ class _DownloadsSettingsPageState extends State<DownloadsSettingsPage> {
               value: dl.wifiOnly,
               onChanged: (v) => dl.saveSetting('dl_wifi_only', v),
             ),
+            _SwitchTile(
+              icon: Icons.battery_charging_full_rounded,
+              iconColor: cs.primary,
+              title: 'Charging Only',
+              subtitle: 'Only download while plugged in',
+              value: dl.onlyWhenCharging,
+              onChanged: (v) => dl.saveSetting('dl_only_charging', v),
+            ),
+            _SwitchTile(
+              icon: Icons.play_circle_outline_rounded,
+              iconColor: cs.primary,
+              title: 'Download Ahead While Reading',
+              subtitle: 'Pre-download next chapter as you read',
+              value: dl.downloadWhileReading,
+              onChanged: (v) => dl.saveSetting('dl_while_reading', v),
+            ),
+            const SizedBox(height: 8),
+            _SectionHeader(title: 'Download Queue'),
+            _ChoiceTile(
+              icon: Icons.queue_rounded,
+              iconColor: const Color(0xFF4CAF82),
+              title: 'Simultaneous Downloads',
+              value: dl.simultaneousDownloads,
+              choices: const ['1', '2', '3', '5', '10'],
+              onChanged: (v) => dl.saveStringSetting('dl_simultaneous', v),
+            ),
+            _ChoiceTile(
+              icon: Icons.high_quality_rounded,
+              iconColor: const Color(0xFF4CAF82),
+              title: 'Download Quality',
+              value: dl.downloadQuality,
+              choices: const ['Original', 'High', 'Medium', 'Low'],
+              onChanged: (v) => dl.saveStringSetting('dl_quality', v),
+            ),
             const SizedBox(height: 8),
             _SectionHeader(title: 'Delete Downloaded Chapters'),
             _SwitchTile(
@@ -70,6 +104,28 @@ class _DownloadsSettingsPageState extends State<DownloadsSettingsPage> {
               value: dl.deleteAfterRead,
               onChanged: (v) => dl.saveSetting('dl_delete_after_read', v),
             ),
+            _SwitchTile(
+              icon: Icons.bookmark_remove_rounded,
+              iconColor: AppTheme.secondary,
+              title: 'Include Bookmarked Chapters',
+              subtitle: 'Delete bookmarked chapters along with the rest',
+              value: dl.removeBookmarked,
+              onChanged: (v) => dl.saveSetting('dl_remove_bookmarked', v),
+            ),
+            _ChoiceTile(
+              icon: Icons.history_toggle_off_rounded,
+              iconColor: AppTheme.secondary,
+              title: 'Auto-Delete Read Chapters',
+              value: dl.autoDeleteAfter,
+              choices: const [
+                'Disabled',
+                'After 1 chapter',
+                'After 2 chapters',
+                'After 5 chapters',
+                'After 10 chapters',
+              ],
+              onChanged: (v) => dl.saveStringSetting('dl_auto_delete', v),
+            ),
             const SizedBox(height: 8),
             _SectionHeader(title: 'Format'),
             _SwitchTile(
@@ -79,6 +135,14 @@ class _DownloadsSettingsPageState extends State<DownloadsSettingsPage> {
               subtitle: 'Archive chapters as CBZ files with metadata',
               value: dl.saveAsCbz,
               onChanged: (v) => dl.saveSetting('dl_save_cbz', v),
+            ),
+            _SwitchTile(
+              icon: Icons.picture_as_pdf_rounded,
+              iconColor: AppTheme.secondary,
+              title: 'Save as PDF',
+              subtitle: 'Package chapters as a single PDF (one image per page)',
+              value: dl.saveAsPdf,
+              onChanged: (v) => dl.saveSetting('dl_save_pdf', v),
             ),
             const SizedBox(height: 8),
             _SectionHeader(title: 'Download Location'),
@@ -273,6 +337,125 @@ class _SwitchTile extends StatelessWidget {
             activeThumbColor: cs.onPrimary,
             activeTrackColor: cs.primary,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChoiceTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String value;
+  final List<String> choices;
+  final ValueChanged<String> onChanged;
+
+  const _ChoiceTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.value,
+    required this.choices,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () => _showPicker(context),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withAlpha(25),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: GoogleFonts.manrope(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface,
+                ),
+              ),
+            ),
+            Text(
+              value,
+              style: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: cs.outline, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPicker(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cs.surfaceContainerHighest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: cs.outline,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              title,
+              style: GoogleFonts.manrope(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface,
+              ),
+            ),
+          ),
+          Divider(color: cs.outlineVariant),
+          ...choices.map(
+            (c) => ListTile(
+              title: Text(
+                c,
+                style: GoogleFonts.manrope(fontSize: 14, color: cs.onSurface),
+              ),
+              trailing: c == value
+                  ? Icon(Icons.check_rounded, color: cs.primary, size: 20)
+                  : null,
+              onTap: () {
+                Navigator.pop(context);
+                onChanged(c);
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

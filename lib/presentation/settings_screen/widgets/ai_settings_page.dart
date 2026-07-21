@@ -28,6 +28,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
   // API keys
   final Map<String, TextEditingController> _keyControllers = {};
   final Map<String, bool> _keyVisible = {};
+  final _koharuUrlController = TextEditingController();
 
   static const _providers = [
     {'id': 'claude', 'name': 'Claude (Anthropic)', 'desc': 'Best for nuanced translation', 'icon': '🤖', 'badge': 'Recommended', 'hint': 'sk-ant-api03-...'},
@@ -59,6 +60,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
   void dispose() {
     _tabController.dispose();
     for (final c in _keyControllers.values) c.dispose();
+    _koharuUrlController.dispose();
     super.dispose();
   }
 
@@ -76,6 +78,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
       final key = prefs.getString('api_key_${p['id']}') ?? '';
       _keyControllers[p['id']]!.text = key;
     }
+    _koharuUrlController.text = prefs.getString('koharu_server_url') ?? '';
   }
 
   Future<void> _saveSetting(String key, dynamic value) async {
@@ -227,6 +230,51 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
               ),
             ));
           }).toList()),
+        ),
+        const SizedBox(height: 8),
+        _SectionHeader(title: 'Koharu Server'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('🖥️', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Text('Server URL', style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurface)),
+              ]),
+              const SizedBox(height: 4),
+              Text('Full manga inpainting via local Docker server',
+                  style: GoogleFonts.manrope(fontSize: 11, color: cs.outline)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _koharuUrlController,
+                style: GoogleFonts.manrope(fontSize: 12, color: cs.onSurface),
+                decoration: InputDecoration(
+                  hintText: 'http://localhost:4000',
+                  hintStyle: GoogleFonts.manrope(fontSize: 12, color: cs.outline),
+                  helperText: 'docker run -p 4000:4000 mayocream/koharu:latest',
+                  helperStyle: GoogleFonts.manrope(fontSize: 10, color: cs.outline),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  filled: true,
+                  fillColor: cs.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: cs.outlineVariant)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: cs.primary)),
+                ),
+                onChanged: (v) => _saveSetting('koharu_server_url', v),
+              ),
+            ]),
+          ),
         ),
         const SizedBox(height: 24),
       ],

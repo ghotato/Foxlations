@@ -1,8 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/app_logger.dart';
+import '../../../core/services/image_loader.dart';
 import '../../../theme/app_theme.dart';
+
+/// Advanced preference keys. Switches persist; some have no runtime effect
+/// yet (DNS-over-HTTPS, third-party extensions, external browser) — those
+/// will be wired up when their underlying features land.
+class AdvancedPrefs {
+  static const verboseLogging = 'adv_verbose_logging';
+  static const dnsOverHttps = 'adv_dns_over_https';
+  static const dnsProvider = 'adv_dns_provider';
+  static const thirdPartyExtensions = 'adv_third_party_extensions';
+  static const extensionUpdateNotify = 'adv_extension_update_notify';
+  static const externalBrowser = 'adv_external_browser';
+}
 
 class AdvancedSettingsPage extends StatefulWidget {
   const AdvancedSettingsPage({super.key});
@@ -17,6 +32,96 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
   bool _thirdPartyExtensions = false;
   bool _extensionUpdateNotify = true;
   bool _externalBrowser = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    setState(() {
+      _verboseLogging = p.getBool(AdvancedPrefs.verboseLogging) ?? false;
+      _dnsOverHttps = p.getBool(AdvancedPrefs.dnsOverHttps) ?? false;
+      _dnsProvider = p.getString(AdvancedPrefs.dnsProvider) ?? 'Cloudflare';
+      _thirdPartyExtensions =
+          p.getBool(AdvancedPrefs.thirdPartyExtensions) ?? false;
+      _extensionUpdateNotify =
+          p.getBool(AdvancedPrefs.extensionUpdateNotify) ?? true;
+      _externalBrowser = p.getBool(AdvancedPrefs.externalBrowser) ?? false;
+    });
+  }
+
+  Future<void> _setBool(String key, bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(key, value);
+  }
+
+  Future<void> _setString(String key, String value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(key, value);
+  }
+
+  Future<void> _clearChapterCache() async {
+    ImageLoader().clearCache();
+    if (mounted) AppTheme.showSnackBar(context, 'Chapter image cache cleared');
+  }
+
+  Future<void> _confirmClearDatabase() async {
+    final cs = Theme.of(context).colorScheme;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cs.surface,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+        title: Text('Clear database?',
+            style: GoogleFonts.manrope(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: cs.onSurface)),
+        content: Text(
+          'This permanently deletes your library, categories, and read '
+          'history. Installed extensions and downloads are not affected.',
+          style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurfaceVariant),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.manrope(color: cs.outline)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Clear',
+                style: GoogleFonts.manrope(
+                    color: AppTheme.error, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Clear both library and vault hive boxes. Names match LibraryService.
+    for (final prefix in ['library', 'vault']) {
+      for (final suffix in ['_manga', '_chapters', '_categories']) {
+        try {
+          if (Hive.isBoxOpen('$prefix$suffix')) {
+            await Hive.box('$prefix$suffix').clear();
+          }
+        } catch (e) {
+          await logger.error('Failed to clear box $prefix$suffix',
+              category: LogCategory.general, detail: e.toString());
+        }
+      }
+    }
+    if (mounted) {
+      AppTheme.showSnackBar(
+          context, 'Database cleared — restart the app to reseed defaults');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +142,10 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
           _SectionHeader(title: 'Logging'),
           _SwitchTile(icon: Icons.bug_report_rounded, iconColor: cs.outline,
               title: 'Verbose Logging', subtitle: 'Log detailed debug information',
-              value: _verboseLogging, onChanged: (v) => setState(() => _verboseLogging = v)),
+              value: _verboseLogging, onChanged: (v) {
+                setState(() => _verboseLogging = v);
+                _setBool(AdvancedPrefs.verboseLogging, v);
+              }),
           _ActionTile(icon: Icons.list_alt_rounded, iconColor: AppTheme.warning,
               title: 'View Error Logs', subtitle: 'Browse debug and error logs',
               onTap: () => Navigator.push(context,
@@ -46,33 +154,48 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
           _SectionHeader(title: 'Network'),
           _SwitchTile(icon: Icons.dns_rounded, iconColor: const Color(0xFF06B6D4),
               title: 'DNS over HTTPS', subtitle: 'Use secure DNS resolution',
-              value: _dnsOverHttps, onChanged: (v) => setState(() => _dnsOverHttps = v)),
+              value: _dnsOverHttps, onChanged: (v) {
+                setState(() => _dnsOverHttps = v);
+                _setBool(AdvancedPrefs.dnsOverHttps, v);
+              }),
           if (_dnsOverHttps)
             _ChoiceTile(icon: Icons.cloud_rounded, iconColor: const Color(0xFF06B6D4),
                 title: 'DNS Provider', value: _dnsProvider,
                 options: const ['Cloudflare', 'Google', 'AdGuard', 'Custom'],
-                onChanged: (v) => setState(() => _dnsProvider = v)),
+                onChanged: (v) {
+                  setState(() => _dnsProvider = v);
+                  _setString(AdvancedPrefs.dnsProvider, v);
+                }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Extensions'),
           _SwitchTile(icon: Icons.extension_rounded, iconColor: AppTheme.warning,
               title: 'Third-Party Extensions', subtitle: 'Allow extensions from unknown sources',
-              value: _thirdPartyExtensions, onChanged: (v) => setState(() => _thirdPartyExtensions = v)),
+              value: _thirdPartyExtensions, onChanged: (v) {
+                setState(() => _thirdPartyExtensions = v);
+                _setBool(AdvancedPrefs.thirdPartyExtensions, v);
+              }),
           _SwitchTile(icon: Icons.system_update_alt_rounded, iconColor: AppTheme.warning,
               title: 'Extension Update Alerts', subtitle: 'Notify when extensions have updates',
-              value: _extensionUpdateNotify, onChanged: (v) => setState(() => _extensionUpdateNotify = v)),
+              value: _extensionUpdateNotify, onChanged: (v) {
+                setState(() => _extensionUpdateNotify = v);
+                _setBool(AdvancedPrefs.extensionUpdateNotify, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Browser'),
           _SwitchTile(icon: Icons.open_in_browser_rounded, iconColor: AppTheme.secondary,
               title: 'External Browser', subtitle: 'Open links in system browser',
-              value: _externalBrowser, onChanged: (v) => setState(() => _externalBrowser = v)),
+              value: _externalBrowser, onChanged: (v) {
+                setState(() => _externalBrowser = v);
+                _setBool(AdvancedPrefs.externalBrowser, v);
+              }),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Data'),
           _ActionTile(icon: Icons.cleaning_services_rounded, iconColor: AppTheme.error,
               title: 'Clear Chapter Cache', subtitle: 'Free up storage space',
-              onTap: () => AppTheme.showSnackBar(context, 'Cache cleared')),
+              onTap: _clearChapterCache),
           _ActionTile(icon: Icons.delete_sweep_rounded, iconColor: AppTheme.error,
-              title: 'Clear Database', subtitle: 'Reset all app data',
-              onTap: () {}),
+              title: 'Clear Database', subtitle: 'Reset library, categories, and read history',
+              onTap: _confirmClearDatabase),
           const SizedBox(height: 24),
         ],
       ),

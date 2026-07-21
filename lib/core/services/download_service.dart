@@ -1,8 +1,12 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:archive/archive.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
 import 'cookie_store.dart';
@@ -197,15 +201,18 @@ class DownloadService {
       return;
     }
 
-    // Try deleting CBZ file
+    // Try deleting a packaged CBZ/PDF file
     final base = await getBasePath();
     final section = isVault ? 'vault' : 'library';
-    final cbzPath = '$base/$section/$sourceId/${_sanitize(mangaTitle)}/${_sanitize(chapterName)}.cbz';
-    final cbzFile = File(cbzPath);
-    if (await cbzFile.exists()) {
-      await cbzFile.delete();
-      debugPrint('[Download] Deleted CBZ: $cbzPath');
-      return;
+    final mangaDir = '$base/$section/$sourceId/${_sanitize(mangaTitle)}';
+    for (final ext in ['cbz', 'pdf']) {
+      final packedPath = '$mangaDir/${_sanitize(chapterName)}.$ext';
+      final packedFile = File(packedPath);
+      if (await packedFile.exists()) {
+        await packedFile.delete();
+        debugPrint('[Download] Deleted ${ext.toUpperCase()}: $packedPath');
+        return;
+      }
     }
 
     // Also try both vault and library if isVault wasn't specified correctly
@@ -216,11 +223,13 @@ class DownloadService {
         debugPrint('[Download] Deleted folder (found in $sec): $tryDir');
         return;
       }
-      final tryCbz = '$tryDir.cbz';
-      if (await File(tryCbz).exists()) {
-        await File(tryCbz).delete();
-        debugPrint('[Download] Deleted CBZ (found in $sec): $tryCbz');
-        return;
+      for (final ext in ['cbz', 'pdf']) {
+        final tryPacked = '$tryDir.$ext';
+        if (await File(tryPacked).exists()) {
+          await File(tryPacked).delete();
+          debugPrint('[Download] Deleted ${ext.toUpperCase()} (found in $sec): $tryPacked');
+          return;
+        }
       }
     }
 
@@ -303,6 +312,260 @@ class DownloadService {
 
     debugPrint('[Download] Created CBZ: $cbzPath (${(zipData.length / 1024).toStringAsFixed(0)} KB)');
     return cbzPath;
+  }
+
+  /// Convert a downloaded chapter folder to a single PDF (one image per page).
+  /// Each page is sized to its image so aspect ratio is preserved and there are
+  /// no margins. Returns the PDF path, or null on failure.
+  Future<String?> convertToPdf({
+    required String sourceId,
+    required String mangaTitle,
+    required String chapterName,
+    bool isVault = false,
+    bool deleteFolder = true,
+  }) async {
+    final dir = await getChapterDir(sourceId, mangaTitle, chapterName, isVault: isVault);
+    final d = Directory(dir);
+    if (!await d.exists()) return null;
+
+    final files = await d.list().toList();
+    final images = files.where((f) {
+      final ext = f.path.split('.').last.toLowerCase();
+      return ext == 'jpg' || ext == 'jpeg' || ext == 'png' || ext == 'webp' || ext == 'gif';
+    }).toList();
+    images.sort((a, b) => a.path.compareTo(b.path));
+
+    if (images.isEmpty) return null;
+
+    final doc = pw.Document();
+    int pageCount = 0;
+
+    for (final imgFile in images) {
+      final raw = await File(imgFile.path).readAsBytes();
+      // The PDF `MemoryImage` only accepts JPEG/PNG. Downloaded pages are named
+      // .jpg but may actually be webp/gif bytes, so decode + re-encode to JPEG
+      // to guarantee a valid, embeddable image and known dimensions.
+      final normalized = _toJpegForPdf(raw);
+      if (normalized == null) {
+        debugPrint('[Download] Skipping undecodable page: ${imgFile.path}');
+        continue;
+      }
+      final memImage = pw.MemoryImage(normalized.bytes);
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat(
+            normalized.width.toDouble(),
+            normalized.height.toDouble(),
+          ),
+          margin: pw.EdgeInsets.zero,
+          build: (context) => pw.Center(
+            child: pw.Image(memImage, fit: pw.BoxFit.contain),
+          ),
+        ),
+      );
+      pageCount++;
+    }
+
+    if (pageCount == 0) return null;
+
+    final base = await getBasePath();
+    final section = isVault ? 'vault' : 'library';
+    final mangaDir = '$base/$section/$sourceId/${_sanitize(mangaTitle)}';
+    final pdfPath = '$mangaDir/${_sanitize(chapterName)}.pdf';
+    final bytes = await doc.save();
+    await File(pdfPath).writeAsBytes(bytes);
+
+    if (deleteFolder) await d.delete(recursive: true);
+
+    debugPrint('[Download] Created PDF: $pdfPath (${(bytes.length / 1024).toStringAsFixed(0)} KB, $pageCount pages)');
+    return pdfPath;
+  }
+
+  /// Decode arbitrary image bytes and re-encode as JPEG for PDF embedding.
+  /// Returns the JPEG bytes plus pixel dimensions, or null if undecodable.
+  ({Uint8List bytes, int width, int height})? _toJpegForPdf(Uint8List raw) {
+    final decoded = img.decodeImage(raw);
+    if (decoded == null) return null;
+    final jpg = img.encodeJpg(decoded, quality: 90);
+    return (bytes: jpg, width: decoded.width, height: decoded.height);
+  }
+
+  /// Get the directory path for an anime series' downloaded episodes.
+  Future<String> getAnimeDir(String sourceId, String animeTitle) async {
+    final base = await getBasePath();
+    return '$base/library/$sourceId/${_sanitize(animeTitle)}';
+  }
+
+  /// Check if an episode is downloaded.
+  Future<bool> isEpisodeDownloaded(
+      String sourceId, String animeTitle, String episodeName) async {
+    final dir = await getAnimeDir(sourceId, animeTitle);
+    final name = _sanitize(episodeName);
+    for (final ext in ['mp4', 'mkv', 'ts', 'webm']) {
+      if (await File('$dir/$name.$ext').exists()) return true;
+    }
+    return false;
+  }
+
+  /// Get the local file path for a downloaded episode (null if not found).
+  Future<String?> getEpisodePath(
+      String sourceId, String animeTitle, String episodeName) async {
+    final dir = await getAnimeDir(sourceId, animeTitle);
+    final name = _sanitize(episodeName);
+    for (final ext in ['mp4', 'mkv', 'ts', 'webm']) {
+      final path = '$dir/$name.$ext';
+      if (await File(path).exists()) return path;
+    }
+    return null;
+  }
+
+  /// Download an anime episode. Handles direct video URLs and HLS (.m3u8).
+  /// Progress callback receives (bytesReceived, totalBytes) — total is -1 for
+  /// HLS until the segment count is known, then switches to (segmentsDone, segmentsTotal).
+  Future<bool> downloadEpisode({
+    required String sourceId,
+    required String animeTitle,
+    required String episodeName,
+    required String videoUrl,
+    Map<String, String> headers = const {},
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final dir = await getAnimeDir(sourceId, animeTitle);
+    await Directory(dir).create(recursive: true);
+    final name = _sanitize(episodeName);
+
+    if (videoUrl.contains('.m3u8')) {
+      return _downloadHls(videoUrl, dir, name, headers, onProgress);
+    } else {
+      final ext = _videoExtension(videoUrl);
+      return _downloadDirect(videoUrl, '$dir/$name.$ext', headers, onProgress);
+    }
+  }
+
+  String _videoExtension(String url) {
+    final path = Uri.tryParse(url)?.path ?? url;
+    final ext = path.split('.').last.toLowerCase().split('?').first;
+    const known = {'mp4', 'mkv', 'webm', 'avi', 'mov', 'ts'};
+    return known.contains(ext) ? ext : 'mp4';
+  }
+
+  /// Download a direct video file using Dio (streams to disk, tracks progress).
+  Future<bool> _downloadDirect(
+    String url,
+    String savePath,
+    Map<String, String> headers,
+    void Function(int, int)? onProgress,
+  ) async {
+    if (await File(savePath).exists()) return true;
+    final cookieStore = CookieStore();
+    final storedUA = await cookieStore.getUserAgent();
+    final cookieHeader = await cookieStore.getCookieHeader(url);
+
+    final mergedHeaders = Map<String, String>.from(headers);
+    mergedHeaders.putIfAbsent('User-Agent', () => storedUA);
+    if (cookieHeader != null) mergedHeaders['Cookie'] = cookieHeader;
+
+    final dio = Dio(BaseOptions(
+      headers: mergedHeaders,
+      receiveTimeout: const Duration(minutes: 30),
+      connectTimeout: const Duration(seconds: 30),
+    ));
+
+    try {
+      await dio.download(
+        url,
+        savePath,
+        onReceiveProgress: onProgress,
+      );
+      return await File(savePath).exists();
+    } catch (e) {
+      debugPrint('[Download] Direct video failed: $e');
+      return false;
+    } finally {
+      dio.close();
+    }
+  }
+
+  /// Download an HLS stream by fetching all .ts segments and concatenating.
+  Future<bool> _downloadHls(
+    String m3u8Url,
+    String dir,
+    String name,
+    Map<String, String> headers,
+    void Function(int, int)? onProgress,
+  ) async {
+    final savePath = '$dir/$name.ts';
+    if (await File(savePath).exists()) return true;
+
+    final cookieStore = CookieStore();
+    final storedUA = await cookieStore.getUserAgent();
+    final cookieHeader = await cookieStore.getCookieHeader(m3u8Url);
+
+    final mergedHeaders = Map<String, String>.from(headers);
+    mergedHeaders.putIfAbsent('User-Agent', () => storedUA);
+    if (cookieHeader != null) mergedHeaders['Cookie'] = cookieHeader;
+
+    final dio = Dio(BaseOptions(
+      headers: mergedHeaders,
+      receiveTimeout: const Duration(minutes: 5),
+      connectTimeout: const Duration(seconds: 30),
+    ));
+
+    try {
+      // Fetch the playlist
+      final playlistRes = await dio.get<String>(m3u8Url);
+      var playlist = playlistRes.data ?? '';
+
+      // If master playlist (has #EXT-X-STREAM-INF), pick the first variant
+      if (playlist.contains('#EXT-X-STREAM-INF')) {
+        final variantLine = playlist
+            .split('\n')
+            .firstWhere((l) => l.trim().isNotEmpty && !l.startsWith('#'),
+                orElse: () => '');
+        if (variantLine.isEmpty) return false;
+        final variantUrl = variantLine.startsWith('http')
+            ? variantLine.trim()
+            : '${m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1)}${variantLine.trim()}';
+        final variantRes = await dio.get<String>(variantUrl);
+        playlist = variantRes.data ?? '';
+        m3u8Url = variantUrl;
+      }
+
+      // Collect segment URLs
+      final base = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1);
+      final segments = playlist
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty && !l.startsWith('#'))
+          .map((l) => l.trim().startsWith('http') ? l.trim() : '$base${l.trim()}')
+          .toList();
+
+      if (segments.isEmpty) return false;
+      onProgress?.call(0, segments.length);
+
+      // Download segments and concatenate into a single .ts file
+      final outFile = File(savePath).openWrite(mode: FileMode.writeOnly);
+      int done = 0;
+      for (final seg in segments) {
+        try {
+          final segRes = await dio.get<List<int>>(
+            seg,
+            options: Options(responseType: ResponseType.bytes),
+          );
+          if (segRes.data != null) outFile.add(segRes.data!);
+        } catch (e) {
+          debugPrint('[Download] HLS segment failed: $seg — $e');
+        }
+        done++;
+        onProgress?.call(done, segments.length);
+      }
+      await outFile.close();
+      return await File(savePath).exists();
+    } catch (e) {
+      debugPrint('[Download] HLS download failed: $e');
+      return false;
+    } finally {
+      dio.close();
+    }
   }
 
   String _xmlEscape(String s) =>

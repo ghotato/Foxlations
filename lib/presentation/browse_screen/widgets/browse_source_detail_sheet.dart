@@ -252,6 +252,10 @@ class BrowseSourceDetailSheet extends StatelessWidget {
                   ),
                 ],
               ),
+              if (isInstalled) ...[
+                const SizedBox(height: 8),
+                _UpdateButton(source: source),
+              ],
             ],
           ),
         ));
@@ -395,6 +399,73 @@ class _ActionButtonState extends State<_ActionButton> {
           SnackBar(content: Text('Failed: $e')),
         );
       }
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+}
+
+class _UpdateButton extends StatefulWidget {
+  final MangaSource source;
+
+  const _UpdateButton({required this.source});
+
+  @override
+  State<_UpdateButton> createState() => _UpdateButtonState();
+}
+
+class _UpdateButtonState extends State<_UpdateButton> {
+  bool _loading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        icon: _loading
+            ? SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: cs.primary),
+              )
+            : Icon(Icons.refresh_rounded, size: 18, color: cs.primary),
+        label: Text(
+          _loading ? 'Updating...' : 'Update extension code',
+          style: GoogleFonts.manrope(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: cs.primary,
+          ),
+        ),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        onPressed: _loading ? null : _handleUpdate,
+      ),
+    );
+  }
+
+  Future<void> _handleUpdate() async {
+    setState(() => _loading = true);
+    try {
+      await context.read<SourceProvider>().refreshSourceCode(widget.source.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Updated ${widget.source.name}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Update failed: $e')),
+      );
     }
     if (mounted) setState(() => _loading = false);
   }

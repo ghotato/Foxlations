@@ -46,6 +46,30 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
     _load();
   }
 
+  /// Pick one or more archive/PDF files and import them as local manga.
+  Future<void> _importFile() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: LocalSourceService.importableExts.toList(),
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    int imported = 0;
+    for (final f in result.files) {
+      if (f.path != null && await _service.importFile(f.path!) != null) {
+        imported++;
+      }
+    }
+    if (!mounted) return;
+    AppTheme.showSnackBar(
+      context,
+      imported > 0
+          ? 'Imported $imported file${imported == 1 ? '' : 's'}'
+          : 'Nothing imported (unsupported or unreadable)',
+    );
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -80,6 +104,12 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
             tooltip: 'Manage folders',
             visualDensity: VisualDensity.compact,
             onPressed: () => _showFolderManager(context),
+          ),
+          IconButton(
+            icon: Icon(Icons.note_add_rounded, size: 19, color: cs.primary),
+            tooltip: 'Import file (CBZ/ZIP/EPUB/PDF)',
+            visualDensity: VisualDensity.compact,
+            onPressed: _importFile,
           ),
           IconButton(
             icon: Icon(Icons.add_rounded, size: 20, color: cs.primary),
@@ -145,18 +175,30 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
               style: GoogleFonts.manrope(fontSize: 17, fontWeight: FontWeight.w700, color: cs.onSurface)),
           const SizedBox(height: 8),
           Text(
-            'Add folders containing manga. Supported formats:\nImages (JPG, PNG, WebP, GIF), Archives (CBZ, ZIP, CBR, RAR), EPUB.',
+            'Add a folder of manga, or import a single file.\nSupported: images (JPG, PNG, WebP, GIF), CBZ/ZIP, EPUB and PDF.\n(CBR/RAR only if the file is actually ZIP-packed — true RAR isn\'t supported.)',
             textAlign: TextAlign.center,
             style: GoogleFonts.manrope(fontSize: 13, color: cs.outline, height: 1.5)),
           const SizedBox(height: 20),
-          FilledButton.icon(
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: Text('Add Folder', style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
-            style: FilledButton.styleFrom(
-              backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
-            onPressed: _addFolder,
-          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            FilledButton.icon(
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text('Add Folder', style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+              onPressed: _addFolder,
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.note_add_rounded, size: 18),
+              label: Text('Import File', style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: cs.primary,
+                side: BorderSide(color: cs.primary.withAlpha(80)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+              onPressed: _importFile,
+            ),
+          ]),
         ]),
       ),
     );

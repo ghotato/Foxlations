@@ -13,6 +13,8 @@ import './widgets/security_settings_page.dart';
 import './widgets/advanced_settings_page.dart';
 import './widgets/tracking_settings_page.dart';
 import './widgets/ai_settings_page.dart';
+import './widgets/backup_settings_page.dart';
+import '../repoforge_hub_screen/repoforge_hub_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -147,8 +149,30 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const BrowseSettingsPage())),
           ),
+          _SettingsNavTile(
+            icon: Icons.auto_fix_high_rounded,
+            iconColor: const Color(0xFFE0567B),
+            iconBg: isDark
+                ? const Color(0xFF2E0A16)
+                : const Color(0xFFFFE4EC),
+            title: 'RepoForge',
+            subtitle: 'Build & manage sources from any URL',
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const RepoForgeHubScreen())),
+          ),
           const SizedBox(height: 8),
           _SettingsSectionHeader(title: 'System'),
+          _SettingsNavTile(
+            icon: Icons.backup_rounded,
+            iconColor: const Color(0xFF16A085),
+            iconBg: isDark
+                ? const Color(0xFF06231D)
+                : const Color(0xFFE2F5EF),
+            title: 'Backup & Restore',
+            subtitle: 'Create/restore backups, Tachiyomi/Mihon, auto-backup',
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const BackupSettingsPage())),
+          ),
           _SettingsNavTile(
             icon: Icons.security_rounded,
             iconColor: const Color(0xFF5865F2),

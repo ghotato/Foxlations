@@ -1,9 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../theme/app_theme.dart';
 
-class AboutSettingsPage extends StatelessWidget {
+class AboutSettingsPage extends StatefulWidget {
   const AboutSettingsPage({super.key});
+
+  @override
+  State<AboutSettingsPage> createState() => _AboutSettingsPageState();
+}
+
+class _AboutSettingsPageState extends State<AboutSettingsPage> {
+  // Update these once a public repo exists.
+  static const _sourceCodeUrl = 'https://github.com/ghotato/foxlations';
+  static const _bugReportUrl = 'https://github.com/ghotato/foxlations/issues';
+
+  PackageInfo? _info;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _info = info);
+    });
+  }
+
+  String get _versionLabel {
+    if (_info == null) return '';
+    return 'Version ${_info!.version} (Build ${_info!.buildNumber})';
+  }
+
+  String get _version => _info?.version ?? '';
+
+  Future<void> _copyLink(BuildContext context, String url, String label) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (context.mounted) {
+      AppTheme.showSnackBar(context, '$label link copied to clipboard');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,22 +78,17 @@ class AboutSettingsPage extends StatelessWidget {
             ),
             child: Column(
               children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: cs.primary.withAlpha(26),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(
-                    Icons.menu_book_rounded,
-                    size: 36,
-                    color: cs.primary,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.asset(
+                    'assets/images/foxlations.png',
+                    width: 72,
+                    height: 72,
                   ),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Manga Reader',
+                  'Foxlations',
                   style: GoogleFonts.manrope(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -67,7 +97,7 @@ class AboutSettingsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Version 1.0.0 (Build 1)',
+                  _versionLabel,
                   style: GoogleFonts.manrope(
                     fontSize: 12,
                     color: cs.outline,
@@ -125,8 +155,8 @@ class AboutSettingsPage extends StatelessWidget {
             subtitle: 'Open source licenses',
             onTap: () => showLicensePage(
               context: context,
-              applicationName: 'Manga Reader',
-              applicationVersion: '1.0.0',
+              applicationName: 'Foxlations',
+              applicationVersion: _version,
             ),
           ),
           const SizedBox(height: 8),
@@ -136,8 +166,8 @@ class AboutSettingsPage extends StatelessWidget {
             iconColor: cs.outline,
             iconBg: cs.surfaceContainerHighest,
             title: 'Source Code',
-            subtitle: 'View on GitHub',
-            onTap: () {},
+            subtitle: 'Tap to copy GitHub URL',
+            onTap: () => _copyLink(context, _sourceCodeUrl, 'Source code'),
           ),
           _ActionTile(
             icon: Icons.bug_report_rounded,
@@ -146,8 +176,8 @@ class AboutSettingsPage extends StatelessWidget {
                 ? const Color(0xFF2E0A0A)
                 : const Color(0xFFFFEEEE),
             title: 'Report a Bug',
-            subtitle: 'File an issue',
-            onTap: () {},
+            subtitle: 'Tap to copy issue tracker URL',
+            onTap: () => _copyLink(context, _bugReportUrl, 'Bug report'),
           ),
           const SizedBox(height: 24),
         ],
@@ -156,6 +186,7 @@ class AboutSettingsPage extends StatelessWidget {
   }
 
   void _showChangelog(BuildContext context) {
+    final versionTitle = _version.isNotEmpty ? "What's New in v$_version" : "What's New";
     final cs = Theme.of(context).colorScheme;
     showDialog(
       context: context,
@@ -165,23 +196,79 @@ class AboutSettingsPage extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         ),
         title: Text(
-          "What's New in v1.0.0",
+          versionTitle,
           style: GoogleFonts.manrope(
             fontSize: 16,
             fontWeight: FontWeight.w700,
             color: cs.onSurface,
           ),
         ),
-        content: Column(
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.55),
+            child: SingleChildScrollView(
+              child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ChangelogItem('Initial release'),
-            _ChangelogItem('Extension system with Dart & JS support'),
-            _ChangelogItem('Multiple reading modes'),
-            _ChangelogItem('Library management'),
-            _ChangelogItem('Source browsing and installation'),
+            _ChangelogItem('Sources added from a repo now detect manga / anime / '
+                'light novel correctly (reads Mangayomi-style itemType) and '
+                'auto-imports a repo\'s anime and novel indexes, not just manga'),
+            _ChangelogItem('Cloudflare-protected sources now work in your library '
+                'and search — the app solves the check automatically, or pops a '
+                'quick "verify you are human" screen if needed, then remembers it'),
+            _ChangelogItem('Backup & Restore (Settings › System) — native '
+                'backups, Tachiyomi/Mihon .tachibk import & export, automatic '
+                'scheduled backups, and a list of your backups'),
+            _ChangelogItem('Manga details no longer show raw HTML in the '
+                'description; What\'s New scrolls when long; search bar text '
+                'sits centered'),
+            _ChangelogItem('Global search fixed — it now shows results that '
+                'actually match your query instead of a source\'s popular list, '
+                'and covers line up with their titles'),
+            _ChangelogItem('Tracking is live — connect AniList, MyAnimeList, or '
+                'Kitsu, link a manga from its Tracking button, and your chapter '
+                'progress syncs automatically as you read'),
+            _ChangelogItem('Custom/unknown sites now fill in the details page — '
+                'title, cover, description, status, genres via OpenGraph + smart '
+                'fallbacks (was blank before on bespoke sites)'),
+            _ChangelogItem('RepoForge has its own home now (Settings › RepoForge): '
+                'manage every source you\'ve made, import/export them, and see '
+                'what\'s supported — plus a check for whether a site is covered'),
+            _ChangelogItem('Light novel BROWSING now works — known novel sites '
+                '(250+, incl. Madara & LightNovel-WP themes) populate their '
+                'popular/latest lists, not just the reader'),
+            _ChangelogItem('MangaDex support — create a MangaDex source in '
+                'RepoForge and browse/read via its official API'),
+            _ChangelogItem('More manga engines auto-detected: HeanCMS (Reaper-style '
+                'API sites) and MMRCMS — they generate working sources now'),
+            _ChangelogItem('Read light novels — create Novel sources and read '
+                'chapters in a clean text reader (font sizing, chapter nav)'),
+            _ChangelogItem('FlameComics now detected correctly (was bouncing '
+                'between KeyoApp and custom) — the source loads properly'),
+            _ChangelogItem('WordPress/Madara novel & manga sites detected more '
+                'reliably; broader chapter-text selectors for novel sites'),
+            _ChangelogItem('Create sources from any URL — for HTML sites AND '
+                'JSON-API sites (e.g. Asura/KeyoApp) (RepoForge)'),
+            _ChangelogItem('Generated sources try every known selector (1220-site '
+                'knowledge base) — more sites work first-try'),
+            _ChangelogItem('RepoForge now generates tube/video sources (e.g. '
+                'xVideos); browse tabs adapt to what the source supports'),
+            _ChangelogItem('Video sources get a Categories tab — tap a category '
+                'to browse its videos, back to the list anytime'),
+            _ChangelogItem('Accurate Madara + MangaThemesia source generation '
+                '(AJAX chapters, JSON reader pages) — ~245 more sites work'),
+            _ChangelogItem('AES crypto + script unpacking so more JS extensions '
+                'work out of the box'),
+            _ChangelogItem('Export chapters to PDF; import single CBZ/PDF files'),
+            _ChangelogItem('JS video sources can now play (getVideoList wired up)'),
+            _ChangelogItem('Fixed JS source loading (DOM selector compatibility)'),
           ],
+              ),
+            ),
+          ),
         ),
         actions: [
           TextButton(
