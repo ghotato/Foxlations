@@ -195,13 +195,18 @@ class _BrowseScreenState extends State<BrowseScreen>
         autofocus: true,
         onChanged: (v) => setState(() => _searchQuery = v),
         style: GoogleFonts.manrope(fontSize: 13, color: cs.onSurface),
+        // Centre the text against the fixed 38px container rather than relying
+        // on a hardcoded vertical padding: iOS font metrics (ascent/descent)
+        // differ from Android's, so `vertical: 9` sat the text off-centre there.
+        textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
           hintText: 'Search extensions & sources...',
           hintStyle: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
           prefixIcon: Icon(Icons.search_rounded, size: 16, color: cs.outline),
           prefixIconConstraints: const BoxConstraints(minWidth: 36),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 9),
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
           filled: false,
         ),
       ),

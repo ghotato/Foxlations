@@ -148,7 +148,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
               'Export a .tachibk you can import into Tachiyomi, Mihon and forks',
               cs, () => _run(_service.createTachiyomiBackup, 'Export')),
           _action(Icons.download_rounded, 'Restore from Tachiyomi/Mihon',
-              'Import a .tachibk / .proto.gz backup (matches sources by name)',
+              'Import a .tachibk / .tmb / .proto.gz backup (matches sources by name)',
               cs, () => _restoreFrom(tachiyomi: true)),
           _header('Automatic backup', cs),
           ListTile(

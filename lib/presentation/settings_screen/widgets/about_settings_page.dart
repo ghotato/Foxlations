@@ -213,6 +213,12 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Importing a Tachiyomi/Mihon/Tachimanga backup now '
+                'works — Tachimanga\'s .tmb files are recognised, and a backup '
+                'that can\'t be read tells you what\'s wrong instead of failing '
+                'with "RangeError"'),
+            _ChangelogItem('iOS: the text in the extensions search bar is '
+                'vertically centered again'),
             _ChangelogItem('iPhone/iPad support — JavaScript sources now load '
                 'correctly on iOS (they previously failed with a type error on '
                 'every search and browse), and searching many sources at once no '

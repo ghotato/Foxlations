@@ -9,6 +9,31 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="${HOME}/.cargo/bin:${FLUTTER_BIN:-/home/coder/flutter/bin}:${PATH}"
 export CC="${CC:-cc}" CXX="${CXX:-c++}"
 
+# Resolve a JDK rather than trusting the ambient JAVA_HOME. Gradle dies with a
+# useless "JAVA_HOME is set to an invalid directory" when the path is stale —
+# which happens whenever this container is recreated, since the JDK is
+# apt-installed and doesn't persist while ~/.bashrc still exports the old path.
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/java" ]; then
+  unset JAVA_HOME
+  for candidate in /usr/lib/jvm/java-21-openjdk-amd64 /usr/lib/jvm/default-java \
+                   /usr/lib/jvm/*/; do
+    if [ -x "${candidate%/}/bin/java" ]; then
+      export JAVA_HOME="${candidate%/}"
+      break
+    fi
+  done
+fi
+if [ -z "${JAVA_HOME:-}" ] && command -v java >/dev/null 2>&1; then
+  JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+  export JAVA_HOME
+fi
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "${JAVA_HOME}/bin/java" ]; then
+  echo "==> ERROR: no JDK found (JAVA_HOME=${JAVA_HOME:-unset})." >&2
+  echo "    Install one:  sudo apt-get install -y openjdk-21-jdk-headless" >&2
+  exit 1
+fi
+export PATH="${JAVA_HOME}/bin:${PATH}"
+
 NOTES_FILE=""; FORCE_BUILD=""; FORCE_VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,6 +59,18 @@ else
   IFS=. read -r MA MI PA <<< "$base"
   NEWVER="${MA}.${MI}.$((PA + 1))+${N}"
 fi
+# The version must be written BEFORE building (flutter bakes it into the APK),
+# so a failed build would otherwise leave pubspec.yaml bumped with nothing to
+# show for it — and the next run would bump again from the inflated number.
+# Restore it on any non-zero exit.
+PUBSPEC_BACKUP=$(mktemp)
+cp pubspec.yaml "$PUBSPEC_BACKUP"
+trap 'rc=$?; if [ $rc -ne 0 ] && [ -s "$PUBSPEC_BACKUP" ]; then
+        cp "$PUBSPEC_BACKUP" pubspec.yaml
+        echo "==> build failed — pubspec.yaml version restored to $(grep "^version:" pubspec.yaml | sed "s/version: //")" >&2
+      fi
+      rm -f "$PUBSPEC_BACKUP"' EXIT
+
 tmp=$(mktemp)
 sed "s/^version: .*/version: ${NEWVER}/" pubspec.yaml > "$tmp" && cat "$tmp" > pubspec.yaml && rm -f "$tmp"
 

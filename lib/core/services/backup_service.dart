@@ -286,7 +286,7 @@ class BackupService {
   Future<int> restoreTachiyomiBackup(String path,
       {List<String> installedSourceIds = const []}) async {
     final bytes = await File(path).readAsBytes();
-    final data = Uint8List.fromList(GZipDecoder().decodeBytes(bytes));
+    final data = unwrapBackupBytes(bytes);
     final r = _ProtoReader(data);
 
     final sourceNames = <int, String>{}; // source int64 -> name
@@ -677,20 +677,79 @@ class _ProtoWriter {
   Uint8List toBytes() => _b.toBytes();
 }
 
+/// Unwrap a backup file down to raw protobuf bytes.
+///
+/// The extension is not trusted — different apps wrap the same payload
+/// differently and users rename files:
+///   * Tachiyomi/Mihon `.tachibk` / `.proto.gz` → gzip (magic `1f 8b`)
+///   * Tachimanga `.tmb`                        → ZIP  (magic `50 4b`)
+///   * already-extracted payloads               → raw protobuf
+///
+/// Sniffing the magic bytes means a `.tmb` renamed to `.tachibk` (or the
+/// reverse) still restores, instead of dying deep inside the proto parser with
+/// an unhelpful RangeError.
+Uint8List unwrapBackupBytes(Uint8List raw, {int depth = 0}) {
+  if (raw.length >= 2 && raw[0] == 0x1F && raw[1] == 0x8B) {
+    return Uint8List.fromList(GZipDecoder().decodeBytes(raw));
+  }
+
+  if (raw.length >= 4 && raw[0] == 0x50 && raw[1] == 0x4B) {
+    if (depth > 1) {
+      throw const FormatException('Backup archive is nested too deeply.');
+    }
+    final archive = ZipDecoder().decodeBytes(raw);
+    final files = archive.files.where((f) => f.isFile).toList();
+    if (files.isEmpty) {
+      throw const FormatException('Backup archive is empty.');
+    }
+    // Prefer an entry that names itself a backup; otherwise the largest file,
+    // which in practice is the library payload rather than a cover thumbnail.
+    bool looksLikeBackup(String n) {
+      final l = n.toLowerCase();
+      return l.endsWith('.proto.gz') ||
+          l.endsWith('.tachibk') ||
+          l.endsWith('.proto') ||
+          l.contains('backup');
+    }
+
+    final candidates = files.where((f) => looksLikeBackup(f.name)).toList();
+    final chosen = (candidates.isNotEmpty ? candidates : files)
+      ..sort((a, b) => b.size.compareTo(a.size));
+    return unwrapBackupBytes(chosen.first.content, depth: depth + 1);
+  }
+
+  // No known container — assume it is already raw protobuf.
+  return raw;
+}
+
+/// Minimal protobuf reader.
+///
+/// Every read is bounds-checked. Previously any surprise in the stream — an
+/// unexpected wire type, a field written by a newer Tachiyomi fork, a container
+/// we mis-detected — walked straight off the end of the buffer and surfaced as
+/// a bare `RangeError (length): Not in inclusive range 0..17: 18`, which says
+/// nothing about what actually went wrong. Now it throws a [FormatException]
+/// naming the offset, so a bad backup produces a message a user can act on.
 class _ProtoReader {
   final Uint8List _d;
   int _pos = 0;
   _ProtoReader(this._d);
 
   bool get hasMore => _pos < _d.length;
+  int get _remaining => _d.length - _pos;
+
+  Never _bad(String what) => throw FormatException(
+      'Malformed backup: $what (at byte $_pos of ${_d.length})');
 
   int readVarint() {
     int result = 0, shift = 0;
     while (true) {
+      if (_pos >= _d.length) _bad('truncated varint');
       final b = _d[_pos++];
       result |= (b & 0x7F) << shift;
       if ((b & 0x80) == 0) break;
       shift += 7;
+      if (shift > 63) _bad('varint longer than 10 bytes');
     }
     return result;
   }
@@ -702,14 +761,21 @@ class _ProtoReader {
 
   Uint8List readBytes() {
     final len = readVarint();
+    if (len < 0 || len > _remaining) {
+      _bad('length-delimited field claims $len bytes, $_remaining remain');
+    }
     final b = Uint8List.sublistView(_d, _pos, _pos + len);
     _pos += len;
     return b;
   }
 
-  String readStringValue() => utf8.decode(readBytes());
+  String readStringValue() {
+    // Tolerate mildly invalid UTF-8 rather than aborting a whole restore.
+    return utf8.decode(readBytes(), allowMalformed: true);
+  }
 
   double readFloat() {
+    if (_remaining < 4) _bad('truncated 32-bit value');
     final bd = ByteData.sublistView(_d, _pos, _pos + 4);
     _pos += 4;
     return bd.getFloat32(0, Endian.little);
@@ -721,14 +787,23 @@ class _ProtoReader {
         readVarint();
         break;
       case 1:
+        if (_remaining < 8) _bad('truncated 64-bit value');
         _pos += 8;
         break;
       case 2:
-        _pos += readVarint();
+        final n = readVarint();
+        if (n < 0 || n > _remaining) {
+          _bad('nested field claims $n bytes, $_remaining remain');
+        }
+        _pos += n;
         break;
       case 5:
+        if (_remaining < 4) _bad('truncated 32-bit value');
         _pos += 4;
         break;
+      default:
+        // Wire types 3/4 (deprecated groups) and 6/7 are not valid here.
+        _bad('unsupported wire type $wire');
     }
   }
 }
