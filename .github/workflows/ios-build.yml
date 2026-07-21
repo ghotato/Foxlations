@@ -50,10 +50,16 @@ jobs:
           NNN=$(printf '%03d' "${{ inputs.build_number }}")
           echo "nnn=$NNN" >> "$GITHUB_OUTPUT"
           cd build/ios/iphoneos
+          # Ad-hoc sign (no certificate needed). A fully unsigned binary has no
+          # signature slot, which makes AltStore/AltSign's ldid assert while
+          # re-signing. Ad-hoc gives it a valid structure to replace.
+          codesign --force --deep --sign - Runner.app \
+            || echo "::warning::ad-hoc codesign failed; continuing unsigned"
           mkdir -p Payload
           cp -R Runner.app Payload/
           IPA="foxlations-${{ inputs.version }}.ipa"
-          zip -qq -r "$IPA" Payload
+          # -y preserves symlinks inside frameworks rather than copying targets.
+          zip -qq -r -y "$IPA" Payload
           echo "ipa=$PWD/$IPA" >> "$GITHUB_OUTPUT"
 
       # Join your tailnet (ephemeral node, auto-removed after the run).
