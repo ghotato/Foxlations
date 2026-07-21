@@ -44,22 +44,55 @@ jobs:
           flutter pub get
           flutter build ios --release --no-codesign
 
-      - name: Package unsigned IPA
+      - name: Package ad-hoc signed IPA
         id: pkg
         run: |
+          set -euo pipefail
           NNN=$(printf '%03d' "${{ inputs.build_number }}")
           echo "nnn=$NNN" >> "$GITHUB_OUTPUT"
           cd build/ios/iphoneos
-          # Ad-hoc sign (no certificate needed). A fully unsigned binary has no
-          # signature slot, which makes AltStore/AltSign's ldid assert while
-          # re-signing. Ad-hoc gives it a valid structure to replace.
-          codesign --force --deep --sign - Runner.app \
-            || echo "::warning::ad-hoc codesign failed; continuing unsigned"
+          APP=Runner.app
+
+          # `codesign --deep` seals the outer bundle but leaves the nested
+          # framework binaries with NO LC_CODE_SIGNATURE (verified: 42 of 44
+          # frameworks came out unsigned). A sideloader then has to create a
+          # signature slot from scratch in each one, which is what makes
+          # AltStore/AltSign's ldid assert:
+          #   ldid.cpp(1461): _assert(): end >= size - 0x10
+          # So sign inside-out and explicitly, never via --deep.
+
+          # Some pods ship a single-slice "fat" wrapper (objective_c does).
+          # Flatten to a plain arm64 Mach-O so re-signers don't have to rewrite
+          # fat offsets — a device build only ever needs the arm64 slice.
+          for fw in "$APP"/Frameworks/*.framework; do
+            bin="$fw/$(basename "$fw" .framework)"
+            [ -f "$bin" ] || continue
+            if [ "$(od -An -N4 -tx1 "$bin" | tr -d ' \n')" = "cafebabe" ]; then
+              echo "thinning fat binary: $bin"
+              lipo -thin arm64 "$bin" -output "$bin.thin"
+              mv "$bin.thin" "$bin"
+            fi
+          done
+
+          # Frameworks first, then the app bundle last so its CodeResources
+          # seals the signatures we just created.
+          for fw in "$APP"/Frameworks/*.framework; do
+            codesign --force --sign - --timestamp=none "$fw"
+          done
+          codesign --force --sign - --timestamp=none "$APP"
+
+          # Fail loudly rather than shipping a half-signed bundle again.
+          fail=0
+          for fw in "$APP"/Frameworks/*.framework; do
+            codesign -dv "$fw" >/dev/null 2>&1 || { echo "::error::still unsigned: $fw"; fail=1; }
+          done
+          [ "$fail" = 0 ]
+          codesign -dv "$APP"
+
           mkdir -p Payload
-          cp -R Runner.app Payload/
+          cp -R "$APP" Payload/
           IPA="foxlations-${{ inputs.version }}.ipa"
-          # -y preserves symlinks inside frameworks rather than copying targets.
-          zip -qq -r -y "$IPA" Payload
+          zip -qq -r "$IPA" Payload
           echo "ipa=$PWD/$IPA" >> "$GITHUB_OUTPUT"
 
       # Join your tailnet (ephemeral node, auto-removed after the run).
