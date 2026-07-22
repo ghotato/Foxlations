@@ -1,55 +1,27 @@
-Security & encryption, RepoForge framework coverage, and a batch of library/UX
-work. The largest release so far, and the one hardened for going public.
+Foxlations is now open source, plus fixes for source icons, repo names, and
+Webtoons in RepoForge.
 
-Security & privacy
-- Your login tokens for AniList / MyAnimeList / Kitsu are now encrypted with a
-  key held in the device keystore, instead of sitting in plain storage where
-  anything with file access could read them and impersonate you.
-- The vault is now genuinely encrypted (PBKDF2 + AES) with your password, not
-  just hidden. Its contents stay locked until you unlock, and leaving the vault
-  drops the decrypted copy from memory.
-  (One-time: reconnect trackers once, and re-enter your vault password so it
-  re-encrypts under the new scheme.)
-- A full security review before open-sourcing: connections now verify their
-  certificates, extensions can no longer be tricked into running hidden code
-  via a crafted source name or URL, sources must load over https, and cookies
-  no longer leak across sibling sites.
+Open source
+- The full source is now public under the Apache 2.0 licence:
+  https://github.com/ghotato/Foxlations
+- Every release is published to GitHub Releases as well as the download page,
+  so the APK and IPA can be grabbed from either.
+
+Sources & extensions
+- Sources now show their real icon instead of a coloured letter tile. Repos
+  that publish icons alongside their extension list are picked up
+  automatically; anything without one still falls back to the letter.
+- A source installed from an external repo now shows which repo it came from
+  (keiyoushi, yuzono, and so on) instead of just saying "custom".
 
 RepoForge
-- Recognises 60+ more site frameworks across manga, anime AND light novels
-  (Madara, MangaThemesia, foolslide, GigaViewer, the major novel CMSes, and
-  many more). When it detects one, it auto-fills the selector slots with what
-  that framework uses.
-- Scraping Studio: every selector field now has a searchable list of known
-  selectors to pick from, each showing a live count of how many elements it
-  matches — so you don't have to know CSS. The test button is clearer, and
-  "0 matches" reads as a gentle "no match" rather than a red error.
-- No longer mislabels sites as an "AniList API" just because they link to
-  AniList; sites are identified by their real framework.
-
-Library & sources
-- Light Novel tab added to Sources and Extensions (novel sources were parsed
-  but had nowhere to show).
-- Pull the library down to update whatever category you're currently viewing.
-- Empty results now say the right thing — "No anime found" / "No light novels
-  found" instead of always "No manga".
-- The vault's secret opener moved to the Foxlations logo on the About page
-  (tap it 9×), and you can now move individual titles — with their read
-  progress — in and out of the vault by type.
-
-Readability & size
-- Text across the whole app is easier to read: subtitles, captions,
-  placeholders and dividers were too faint; button labels could be white on a
-  light accent; toasts blended into the page. All fixed.
-- The Android APK is roughly half the size — it was shipping CPU architectures
-  (32-bit ARM, x86) it never needed.
-
-Other
-- "Check for Updates" actually checks now and tells you what changed; Android
-  offers the new APK directly, iPhone points at AltStore.
+- Fixed Webtoons. Its built-in browse addresses were wrong and the site
+  answered them with an error, so every attempt came back "no manga found".
+  Browsing and search work now.
 
 Known gaps
-- Some of the newly-added framework generators (the JSON-API ones) are
-  best-effort and may need tuning against specific sites.
-- iOS text recognition for Japanese/Korean/Chinese is included but unverified;
-  CI checks whether the models actually linked.
+- Webtoons chapter lists still don't load. The site builds its episode list in
+  the browser instead of sending it with the page, so there is nothing for the
+  scraper to read. Browsing and search are unaffected.
+- A few other built-in site addresses may have the same fault Webtoons did.
+  They're being checked, and any that are wrong will be fixed the same way.

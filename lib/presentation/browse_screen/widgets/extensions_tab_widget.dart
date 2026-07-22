@@ -6,6 +6,7 @@ import '../../../core/providers/source_provider.dart';
 import '../../../core/providers/vault_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'browse_source_detail_sheet.dart';
+import 'source_icon.dart';
 import 'source_settings_page.dart';
 
 class ExtensionsTabWidget extends StatefulWidget {
@@ -450,11 +451,8 @@ class _ExtensionRow extends StatelessWidget {
           child: Row(
             children: [
               // Extension icon
-              Container(
-                width: 52,
-                height: 52,
+              DecoratedBox(
                 decoration: BoxDecoration(
-                  color: cs.primary.withAlpha(20),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
@@ -464,17 +462,11 @@ class _ExtensionRow extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Text(
-                    source.name.isNotEmpty
-                        ? source.name[0].toUpperCase()
-                        : '?',
-                    style: GoogleFonts.manrope(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: cs.primary,
-                    ),
-                  ),
+                child: SourceIcon(
+                  source: source,
+                  size: 52,
+                  radius: 12,
+                  fontSize: 22,
                 ),
               ),
               const SizedBox(width: 12),

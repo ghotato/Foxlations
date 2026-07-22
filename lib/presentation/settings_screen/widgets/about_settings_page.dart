@@ -239,6 +239,20 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Foxlations is now open source, under the Apache 2.0 '
+                'licence. The full code is on GitHub, and each release is '
+                'published there as well as on the download page.'),
+            _ChangelogItem('Sources now show their real icon instead of a '
+                'coloured letter tile. Repos that publish icons alongside '
+                'their extension list are picked up automatically.'),
+            _ChangelogItem('A source installed from an external repo now shows '
+                'which repo it came from — keiyoushi, yuzono, and so on — '
+                'instead of just saying "custom".'),
+            _ChangelogItem('RepoForge: fixed Webtoons. Its built-in browse '
+                'addresses were wrong and the site answered with an error, so '
+                'every attempt came back "no manga found". Browsing and search '
+                'work now; chapter lists still don\'t, because Webtoons builds '
+                'those in the browser rather than sending them with the page.'),
             _ChangelogItem('Your private data is now encrypted. Login tokens for '
                 'AniList/MyAnimeList/Kitsu are protected by the device keystore, '
                 'and the vault is properly encrypted with your password instead '

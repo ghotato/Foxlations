@@ -117,13 +117,32 @@ class MangaSource {
       return seed.isEmpty ? '' : _stableHash(seed);
     }
 
+    // Where to find this source's icon.
+    //
+    // Mangayomi-style indexes carry `iconUrl` outright. Tachiyomi-style ones
+    // (keiyoushi and its forks) carry none at all — 0 of keiyoushi's 1368
+    // entries have the field — but they publish icons next to the index at
+    // `<repo-root>/icon/<pkg>.png`, so derive it from the index URL. Left empty
+    // when neither applies: the site's own favicon is an unreliable fallback
+    // (sampled hosts returned 403 and 404 as often as an image), and the letter
+    // tile the UI already draws beats a broken image.
+    String resolveIconUrl() {
+      final explicit = asStr(json['iconUrl']);
+      if (explicit.isNotEmpty) return explicit;
+      final pkg = asStr(json['pkg']);
+      if (pkg.isEmpty || repoUrl.isEmpty) return '';
+      final slash = repoUrl.lastIndexOf('/');
+      if (slash <= 0) return '';
+      return '${repoUrl.substring(0, slash)}/icon/$pkg.png';
+    }
+
     return MangaSource(
       id: resolveId(),
       name: asStr(json['name'], 'Unknown'),
       baseUrl: asStr(json['baseUrl']),
       lang: asStr(json['lang'], 'en'),
       framework: asStr(json['framework'] ?? json['typeSource'], 'custom'),
-      iconUrl: asStr(json['iconUrl']),
+      iconUrl: resolveIconUrl(),
       sourceCodeUrl: asStr(json['sourceCodeUrl']),
       sourceCodeLanguage: parseSourceLang(),
       version: asStr(json['version'], '0.1.0'),

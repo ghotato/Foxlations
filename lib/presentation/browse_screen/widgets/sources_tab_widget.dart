@@ -8,6 +8,7 @@ import '../../../core/providers/vault_provider.dart';
 import '../../../routes/app_routes.dart';
 import '../../../theme/app_theme.dart';
 import 'browse_source_detail_sheet.dart';
+import 'source_icon.dart';
 
 class SourcesTabWidget extends StatefulWidget {
   final String searchQuery;
@@ -422,25 +423,11 @@ class _SourceRow extends StatelessWidget {
           child: Row(
             children: [
               // Source icon
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.primary.withAlpha(20),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                ),
-                child: Center(
-                  child: Text(
-                    source.name.isNotEmpty
-                        ? source.name[0].toUpperCase()
-                        : '?',
-                    style: GoogleFonts.manrope(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: cs.primary,
-                    ),
-                  ),
-                ),
+              SourceIcon(
+                source: source,
+                size: 40,
+                radius: AppTheme.radiusSmall,
+                fontSize: 18,
               ),
               const SizedBox(width: 12),
               // Source info
@@ -464,7 +451,12 @@ class _SourceRow extends StatelessWidget {
                         _LangBadge(lang: source.lang, isNsfw: source.isNsfw),
                         const SizedBox(width: 8),
                         Text(
-                          source.framework,
+                          // Where it came from is more useful than how it's
+                          // built — and for anything unrecognised the framework
+                          // is just "custom", which told the user nothing.
+                          source.repoName.isNotEmpty
+                              ? source.repoName
+                              : source.framework,
                           style: GoogleFonts.manrope(
                             fontSize: 11,
                             color: cs.outline,

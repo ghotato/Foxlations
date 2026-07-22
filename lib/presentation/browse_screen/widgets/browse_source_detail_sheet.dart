@@ -5,6 +5,7 @@ import '../../../core/models/source_model.dart';
 import '../../../core/providers/source_provider.dart';
 import '../../../routes/app_routes.dart';
 import '../../../theme/app_theme.dart';
+import 'source_icon.dart';
 
 class BrowseSourceDetailSheet extends StatelessWidget {
   final MangaSource source;
@@ -60,11 +61,8 @@ class BrowseSourceDetailSheet extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Source icon
-                  Container(
-                    width: 64,
-                    height: 64,
+                  DecoratedBox(
                     decoration: BoxDecoration(
-                      color: cs.primary.withAlpha(20),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -74,17 +72,11 @@ class BrowseSourceDetailSheet extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: Center(
-                      child: Text(
-                        source.name.isNotEmpty
-                            ? source.name[0].toUpperCase()
-                            : '?',
-                        style: GoogleFonts.manrope(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: cs.primary,
-                        ),
-                      ),
+                    child: SourceIcon(
+                      source: source,
+                      size: 64,
+                      radius: 14,
+                      fontSize: 28,
                     ),
                   ),
                   const SizedBox(width: 16),

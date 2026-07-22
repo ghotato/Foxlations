@@ -1480,6 +1480,11 @@ class FrameworkDetectorService {
     'ZManga': {'item': 'div.flexbox2-item', 'title': 'div.flexbox2-title > span', 'cover': 'img', 'chapters': 'ul.series-chapterlist div.flexch-infoz a', 'page_images': 'div.reader-area img'},
     'Multi-Chan': {'item': 'div.content_row', 'cover': 'img#cover', 'chapters': 'table.table_cha tr:gt(1)', 'detailTitle': 'h1'},
     'Comici Viewer': {'item': 'div.series-list-item', 'title': 'div.series-list-item-h span', 'cover': 'img.series-list-item-img'},
+    // Verified against webtoons.com/en/top and /en/dailySchedule: item/title/
+    // cover each match exactly one per card (30 and 155 respectively). No
+    // `chapters` entry on purpose — the series page ships its episode list as an
+    // embedded JS object, not markup, so no CSS selector can reach it.
+    'Webtoon (LINE/NAVER)': {'item': 'a.link._titleItem', 'title': 'strong.title', 'cover': 'div.image_wrap img', 'page_images': 'div.viewer_lst img'},
     'GoDa': {'item': '.container > .cardlist .pb-2 a', 'title': 'h3', 'cover': 'img', 'chapters': '.chapteritem', 'page_images': '#chapcontent > div > img'},
     'InitManga': {'item': 'div.manga-item-grid > div.uk-panel', 'title': 'h3 a', 'cover': 'img', 'chapters': 'div.chapter-item', 'page_images': 'div#chapter-content img[src]'},
     'MangaWork': {'item': "div.w-full.h-full", 'title': 'h1', 'cover': 'img', 'chapters': '#chapter_list li', 'page_images': 'div.reader-area img#imagech'},
@@ -2179,15 +2184,20 @@ class FrameworkDetectorService {
         ];
       case 'Webtoon (LINE/NAVER)':
         return [
+          // /en/genre/all?sortOrder=... was guessed and is dead: it answers
+          // HTTP 500, so a generated source got no rows and reported "no manga
+          // found". These two are verified to return 200 with a full listing in
+          // the raw HTML (30 and 155 cards) — the /genre and per-genre pages
+          // render their listings client-side and are useless to a plain GET.
           {
             'name': 'Popular',
-            'path': '/en/genre/all?sortOrder=READ_COUNT',
+            'path': '/en/top',
             'status': 'found',
             'type': 'list',
           },
           {
             'name': 'Latest',
-            'path': '/en/genre/all?sortOrder=UPDATE',
+            'path': '/en/dailySchedule',
             'status': 'found',
             'type': 'list',
           },

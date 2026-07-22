@@ -227,6 +227,34 @@ class RepoService {
     return 'manga';
   }
 
+  /// A friendly repo name for indexes that don't carry one.
+  ///
+  /// Mangayomi/keiyoushi-style indexes are a bare array with no `repoName`
+  /// field, so every source installed from one had an empty repoName and the
+  /// browse list fell back to showing its framework — which is "custom" for
+  /// anything unrecognised. Git hosts name the repo after its owner (yuzono,
+  /// keiyoushi, NovelSourcery), which is what users actually recognise;
+  /// anything else falls back to the bare host.
+  static String _repoNameFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host.toLowerCase();
+      if (host.isEmpty) return ''; // a local file path, not a URL
+      const gitHosts = {
+        'raw.githubusercontent.com',
+        'github.com',
+        'gitlab.com',
+        'codeberg.org',
+      };
+      if (gitHosts.contains(host) && uri.pathSegments.isNotEmpty) {
+        return uri.pathSegments.first;
+      }
+      return host.startsWith('www.') ? host.substring(4) : host;
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// Expand one index row into the source rows it actually represents.
   ///
   /// A Tachiyomi/keiyoushi entry describes an *extension*, which may ship
@@ -258,7 +286,10 @@ class RepoService {
     // Our format: { repoName, repoVersion, sources: [...] }
     if (data is Map<String, dynamic> && data.containsKey('sources')) {
       final rawList = data['sources'] as List;
-      final name = data['repoName'] as String? ?? '';
+      // An explicit repoName wins; an absent or blank one falls back to the URL
+      // so the browse list never has to show the framework instead.
+      final declared = (data['repoName'] as String? ?? '').trim();
+      final name = declared.isNotEmpty ? declared : _repoNameFromUrl(repoUrl);
       debugPrint('[repo] sources array has ${rawList.length} items');
       final sources = rawList
           .whereType<Map<String, dynamic>>()
@@ -271,7 +302,7 @@ class RepoService {
           .where((s) => s.name.isNotEmpty)
           .toList();
       return RepoIndexResult(
-        repoName: data['repoName'] as String? ?? '',
+        repoName: name,
         repoVersion: data['repoVersion'] as String? ?? '',
         sources: sources,
       );
@@ -279,13 +310,17 @@ class RepoService {
 
     // Fallback: bare array (Mangayomi/keiyoushi index.json is a top-level array)
     if (data is List) {
+      // No repoName in this format — derive one so installed sources are
+      // labelled by where they came from rather than by their framework.
+      final name = _repoNameFromUrl(repoUrl);
       final sources = data
           .whereType<Map<String, dynamic>>()
           .expand(_expandSourceRows)
-          .map((e) => MangaSource.fromJson(e, repoUrl, defaultType: dt))
+          .map((e) => MangaSource.fromJson(e, repoUrl,
+              repoName: name, defaultType: dt))
           .where((s) => s.name.isNotEmpty)
           .toList();
-      return RepoIndexResult(sources: sources);
+      return RepoIndexResult(repoName: name, sources: sources);
     }
 
     throw Exception('Unrecognised index format');
