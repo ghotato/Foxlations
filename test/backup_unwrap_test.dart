@@ -22,7 +22,8 @@ Uint8List zipped(Map<String, List<int>> entries) {
 }
 
 void main() {
-  group('unwrapBackupBytes', () {
+  _sourceMatching();
+  group("unwrapBackupBytes", () {
     test('gzip (.tachibk / .proto.gz) unwraps to the payload', () {
       expect(unwrapBackupBytes(gzipped(payload)), equals(payload));
     });
@@ -75,6 +76,50 @@ void main() {
       // Same bytes either way — detection is by magic number, not extension.
       final tmb = zipped({'backup.proto.gz': gzipped(payload)});
       expect(unwrapBackupBytes(tmb), equals(payload));
+    });
+  });
+}
+
+void _sourceMatching() {
+  group('resolveBackupSourceId', () {
+    // Real shape: ids are numeric/hashes, names are human-readable.
+    const installed = {
+      '8765': 'Asura Scans',
+      'a3f2b1c4': 'Comic Asura',
+      '4321': 'MangaDex',
+    };
+
+    test('matches a backup name to the installed id (the actual bug)', () {
+      expect(resolveBackupSourceId('Asura Scans', installed), '8765');
+      expect(resolveBackupSourceId('MangaDex', installed), '4321');
+    });
+
+    test('is insensitive to case and punctuation', () {
+      expect(resolveBackupSourceId('asurascans', installed), '8765');
+      expect(resolveBackupSourceId('ASURA-SCANS', installed), '8765');
+    });
+
+    test('exact name wins over a containment match', () {
+      // "Asura Scans" is contained in "Comic Asura"? No — but guard the
+      // ordering explicitly so a future edit can't regress it.
+      expect(resolveBackupSourceId('Comic Asura', installed), 'a3f2b1c4');
+    });
+
+    test('falls back to containment for decorated names', () {
+      expect(resolveBackupSourceId('Asura Scans (EN)', installed), '8765');
+    });
+
+    test('our own exports, where the name IS the id, still resolve', () {
+      expect(resolveBackupSourceId('8765', installed), '8765');
+    });
+
+    test('an unknown source keeps its name rather than mis-binding', () {
+      expect(resolveBackupSourceId('Totally Unknown', installed),
+          'Totally Unknown');
+    });
+
+    test('empty name is returned unchanged', () {
+      expect(resolveBackupSourceId('', installed), '');
     });
   });
 }

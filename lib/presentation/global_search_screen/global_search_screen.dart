@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/models/installed_source_model.dart';
+import '../../core/models/source_settings.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../eval/lib.dart';
@@ -49,6 +50,12 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     final sourceProvider = context.read<SourceProvider>();
     final vaultProvider = context.read<VaultProvider>();
     var sources = sourceProvider.installedSources;
+
+    // Honour the per-source "Skip in global search" option.
+    sources = sources
+        .where((s) =>
+            !SourceSettings.cached(s.source.id).excludeFromGlobalSearch)
+        .toList();
 
     // Hide vault sources when not in vault mode
     if (!vaultProvider.vaultActive) {

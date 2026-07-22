@@ -17,6 +17,11 @@ class LibraryManga extends HiveObject {
   int readChapters;
   List<String> categories;
 
+  /// When this entry's chapter list was last fetched from its source.
+  /// Nullable because entries saved before this field existed have no value
+  /// (Hive returns null for an absent field, so old records still read).
+  DateTime? lastChapterFetchAt;
+
   LibraryManga({
     required this.sourceId,
     required this.url,
@@ -33,6 +38,7 @@ class LibraryManga extends HiveObject {
     this.totalChapters = 0,
     this.readChapters = 0,
     this.categories = const [],
+    this.lastChapterFetchAt,
   }) : addedAt = addedAt ?? DateTime.now();
 
   String get uniqueKey => '${sourceId}_$url';
@@ -65,13 +71,15 @@ class LibraryMangaAdapter extends TypeAdapter<LibraryManga> {
       totalChapters: fields[12] as int? ?? 0,
       readChapters: fields[13] as int? ?? 0,
       categories: (fields[14] as List?)?.cast<String>() ?? [],
+      // Field 15 was added later — absent on older records, hence null-safe.
+      lastChapterFetchAt: fields[15] as DateTime?,
     );
   }
 
   @override
   void write(BinaryWriter writer, LibraryManga obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.sourceId)
       ..writeByte(1)
@@ -101,6 +109,8 @@ class LibraryMangaAdapter extends TypeAdapter<LibraryManga> {
       ..writeByte(13)
       ..write(obj.readChapters)
       ..writeByte(14)
-      ..write(obj.categories);
+      ..write(obj.categories)
+      ..writeByte(15)
+      ..write(obj.lastChapterFetchAt);
   }
 }

@@ -125,6 +125,20 @@ void main() {
       );
     });
 
+    test('chapter fetch date puts never-fetched entries first', () {
+      final lib = [
+        m('fetchedRecently')..lastChapterFetchAt = DateTime(2026, 7, 1),
+        m('neverFetched'),
+        m('fetchedLongAgo')..lastChapterFetchAt = DateTime(2025, 1, 1),
+      ];
+      expect(
+        applyLibraryQuery(lib,
+                const LibrarySettings(sort: LibrarySort.chapterFetchDate))
+            .map((e) => e.title),
+        ['neverFetched', 'fetchedLongAgo', 'fetchedRecently'],
+      );
+    });
+
     test('ties break on title so order is stable across rebuilds', () {
       final lib = [m('Zeta', total: 5, read: 5), m('Alpha', total: 5, read: 5)];
       final once =

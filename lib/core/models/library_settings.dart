@@ -2,16 +2,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// How the library list is ordered.
 ///
-/// Mihon also offers "Latest chapter" and "Chapter fetch date". Both need
-/// per-chapter timestamps that this app doesn't record yet — `LibraryChapter`
-/// stores `dateUpload` as an unparsed source-supplied String and has no
-/// fetched-at field — so they're deliberately omitted rather than shipped as
-/// options that silently sort by something else.
+/// "Latest chapter" is still absent: it needs a parsed per-chapter upload date,
+/// and `LibraryChapter.dateUpload` is an unparsed source-supplied String whose
+/// format varies per site. Sorting by it would be wrong more often than right.
 enum LibrarySort {
   alphabetical('Alphabetical'),
   lastRead('Last Read'),
   unread('Unread'),
   totalChapters('Total chapters'),
+  chapterFetchDate('Chapter fetch date'),
   dateAdded('Date Added');
 
   const LibrarySort(this.label);

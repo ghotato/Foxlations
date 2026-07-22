@@ -213,6 +213,14 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Restoring a Tachiyomi/Mihon/Tachimanga backup now '
+                'links each manga to the right installed source — before, '
+                'everything came back with no source and wouldn\'t open'),
+            _ChangelogItem('Every source now has its own settings: override the '
+                'site address if it changes domain, pin it to the top, or skip '
+                'it during global search and library updates'),
+            _ChangelogItem('Library can now sort by chapter fetch date, so you '
+                'can see which series haven\'t been checked in a while'),
             _ChangelogItem('Installing a source from a repo no longer marks '
                 'every other source as installed — repo entries that share no '
                 'ID are now told apart, and extensions that bundle several '

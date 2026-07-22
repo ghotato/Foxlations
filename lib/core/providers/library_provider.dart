@@ -115,6 +115,16 @@ class LibraryProvider extends ChangeNotifier {
       dateUpload: c['dateUpload'] as String?,
     )).toList();
     await _libraryService.cacheChapters(sourceId, mangaUrl, libChapters);
+
+    // Stamp when this entry's chapter list was last pulled, so the library can
+    // sort by "Chapter fetch date". Nothing recorded this before, which is why
+    // that sort couldn't be offered.
+    final entry = _libraryService.getManga(sourceId, mangaUrl);
+    if (entry != null) {
+      entry.lastChapterFetchAt = DateTime.now();
+      await entry.save();
+    }
+
     _manga = _libraryService.getAllManga();
     notifyListeners();
   }

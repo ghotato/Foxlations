@@ -44,6 +44,45 @@ jobs:
           flutter pub get
           flutter build ios --release --no-codesign
 
+      # The ML Kit CJK recognisers are gated behind `#if __has_include(...)` in
+      # google_mlkit_text_recognition's ObjC. If the pods don't resolve, the
+      # guards stay false, the switch falls through to its `default:` (Latin),
+      # and Japanese/Korean/Chinese OCR silently returns garbage — no error, no
+      # log, and only a ~4 KB difference in the binary. Report the real state
+      # rather than inferring it from binary sizes.
+      - name: Verify ML Kit language models
+        run: |
+          echo "── Pods actually installed ──"
+          ls ios/Pods 2>/dev/null | grep -i "MLKitTextRecognition" || \
+            echo "  (none matching MLKitTextRecognition)"
+          echo
+          echo "── Podfile.lock entries ──"
+          grep -i "TextRecognition" ios/Podfile.lock 2>/dev/null | sed 's/^/  /' || \
+            echo "  (no Podfile.lock)"
+          echo
+          echo "── Resource bundles in the built app ──"
+          APP=build/ios/iphoneos/Runner.app
+          find "$APP" -maxdepth 2 -iname "*TextRecognition*" -o -maxdepth 2 -iname "*MLKit*" \
+            | sed 's/^/  /' || true
+          echo
+          missing=""
+          for script in Chinese Devanagari Japanese Korean; do
+            if ls ios/Pods 2>/dev/null | grep -qi "MLKitTextRecognition${script}"; then
+              echo "  OK      MLKitTextRecognition${script}"
+            else
+              echo "  MISSING MLKitTextRecognition${script}"
+              missing="${missing} ${script}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            # Deliberately non-fatal: the rest of the app is fine, and blocking
+            # delivery would cost a testable IPA over one broken feature. The
+            # annotation is loud enough not to be missed.
+            echo "::warning::ML Kit language pods did not install:${missing}. CJK OCR falls back to Latin."
+          else
+            echo "All four ML Kit language pods installed."
+          fi
+
       - name: Package ad-hoc signed IPA
         id: pkg
         run: |

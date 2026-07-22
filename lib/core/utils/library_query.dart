@@ -49,6 +49,11 @@ List<LibraryManga> applyLibraryQuery(
         return unreadOf(a).compareTo(unreadOf(b));
       case LibrarySort.totalChapters:
         return a.totalChapters.compareTo(b.totalChapters);
+      case LibrarySort.chapterFetchDate:
+        // Never-fetched entries sort as oldest, so ascending puts the entries
+        // that have gone longest without a chapter check at the top.
+        return (a.lastChapterFetchAt ?? epoch)
+            .compareTo(b.lastChapterFetchAt ?? epoch);
       case LibrarySort.dateAdded:
         return a.addedAt.compareTo(b.addedAt);
     }

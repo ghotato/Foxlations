@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/source_model.dart';
 import '../models/installed_source_model.dart';
+import '../models/source_settings.dart';
 import '../services/app_logger.dart';
 import '../services/repo_service.dart';
 import '../services/source_manager.dart';
@@ -60,6 +61,9 @@ class SourceProvider extends ChangeNotifier {
 
       _repoUrls = await _repoService.getSavedRepos();
       _installedSources = await _sourceManager.getInstalledSources();
+      // SourceSettings.cached() is read from sync hot paths (search fan-out,
+      // update loop), so it must be warm before those run.
+      await SourceSettings.preload(_installedSources.map((s) => s.source.id));
 
       // Load cached indexes
       for (final url in _repoUrls) {

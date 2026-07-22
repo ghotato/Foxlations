@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/manga_model.dart';
+import '../models/source_settings.dart';
 import '../providers/library_provider.dart';
 import '../providers/source_provider.dart';
 import '../../eval/lib.dart';
@@ -84,6 +85,8 @@ class LibraryUpdateService {
 
     for (final m in manga) {
       try {
+        // Honour the per-source "Skip in library updates" option.
+        if (SourceSettings.cached(m.sourceId).excludeFromUpdates) continue;
         final installed = sourceProvider.getInstalledSource(m.sourceId);
         if (installed == null) continue;
 

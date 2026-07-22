@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import '../core/models/source_model.dart';
+import '../core/models/source_settings.dart';
 import 'model/m_source.dart';
 import 'interface.dart';
 import 'dart/service.dart';
@@ -9,10 +10,17 @@ import 'javascript/service.dart';
 
 ExtensionService getExtensionService(
     MangaSource source, String sourceCode) {
+  // A user-set base URL wins over the one baked into the source — this is how
+  // a site that changed domain keeps working without waiting for the extension
+  // author to publish an update.
+  final override = SourceSettings.cached(source.id).baseUrlOverride;
+  final effectiveBaseUrl =
+      override.isNotEmpty ? override : source.baseUrl;
+
   final mSource = MSource(
     id: source.id.hashCode,
     name: source.name,
-    baseUrl: source.baseUrl,
+    baseUrl: effectiveBaseUrl,
     lang: source.lang,
     hasCloudflare: source.hasCloudflare,
     apiUrl: source.apiUrl.isNotEmpty ? source.apiUrl : null,
@@ -31,14 +39,14 @@ ExtensionService getExtensionService(
       return JsExtensionService(
         mSource: mSource,
         sourceCode: sourceCode,
-        baseUrl: source.baseUrl,
+        baseUrl: effectiveBaseUrl,
       );
     case 'dart':
     default:
       return DartExtensionService(
         mSource: mSource,
         sourceCode: sourceCode,
-        baseUrl: source.baseUrl,
+        baseUrl: effectiveBaseUrl,
       );
   }
 }

@@ -61,13 +61,14 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
     setState(() => _busy = true);
     try {
       if (tachiyomi) {
-        final ids = context
-            .read<SourceProvider>()
-            .installedSources
-            .map((s) => s.source.id)
-            .toList();
+        // id -> display name. Tachiyomi backups name their sources, so the
+        // matcher needs the names; passing ids alone could never match.
+        final installed = {
+          for (final s in context.read<SourceProvider>().installedSources)
+            s.source.id: s.source.name,
+        };
         final n = await _service.restoreTachiyomiBackup(path,
-            installedSourceIds: ids);
+            installedSources: installed);
         if (mounted) AppTheme.showSnackBar(context, 'Imported $n manga');
       } else {
         await _service.restoreBackup(path);

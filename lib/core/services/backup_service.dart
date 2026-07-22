@@ -78,6 +78,7 @@ class BackupService {
         'totalChapters': m.totalChapters,
         'readChapters': m.readChapters,
         'categories': m.categories,
+        'lastChapterFetchAt': m.lastChapterFetchAt?.millisecondsSinceEpoch,
       };
 
   LibraryManga _mangaFromMap(Map m) => LibraryManga(
@@ -100,6 +101,10 @@ class BackupService {
         readChapters: (m['readChapters'] as num?)?.toInt() ?? 0,
         categories:
             (m['categories'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        lastChapterFetchAt: m['lastChapterFetchAt'] != null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                (m['lastChapterFetchAt'] as num).toInt())
+            : null,
       );
 
   Map<String, dynamic> _chapterToMap(LibraryChapter c) => {
@@ -284,7 +289,7 @@ class BackupService {
   /// an installed Foxlations source by the backup's source name when possible.
   /// Returns how many manga were imported.
   Future<int> restoreTachiyomiBackup(String path,
-      {List<String> installedSourceIds = const []}) async {
+      {Map<String, String> installedSources = const {}}) async {
     final bytes = await File(path).readAsBytes();
     final data = unwrapBackupBytes(bytes);
     final r = _ProtoReader(data);
@@ -399,7 +404,7 @@ class BackupService {
 
       // Map source int64 -> a Foxlations source id.
       final backupName = sourceNames[source] ?? '';
-      final sourceId = _resolveSourceId(backupName, installedSourceIds);
+      final sourceId = _resolveSourceId(backupName, installedSources);
 
       final manga = LibraryManga(
         sourceId: sourceId,
@@ -483,18 +488,8 @@ class BackupService {
     );
   }
 
-  String _resolveSourceId(String backupName, List<String> installed) {
-    if (backupName.isEmpty) return backupName;
-    // Our own exports store the Foxlations sourceId as the name.
-    if (installed.contains(backupName)) return backupName;
-    // Otherwise match by loose name similarity.
-    final low = backupName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-    for (final id in installed) {
-      final n = id.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-      if (n == low || n.contains(low) || low.contains(n)) return id;
-    }
-    return backupName; // keep it; manga imported but may not open
-  }
+  String _resolveSourceId(String backupName, Map<String, String> installed) =>
+      resolveBackupSourceId(backupName, installed);
 
   int _statusToTachi(String s) {
     switch (s) {
@@ -675,6 +670,37 @@ class _ProtoWriter {
   }
 
   Uint8List toBytes() => _b.toBytes();
+}
+
+/// Maps a Tachiyomi backup's source name onto an installed Foxlations source.
+///
+/// [installed] is id → display name. Matching MUST go against the names:
+/// Tachiyomi backups identify a source by its human name ("Asura Scans"),
+/// whereas our ids are numeric (from the repo index) or a derived hash. The
+/// original code compared the backup's name against installed *ids*, which
+/// could never match, so every restored entry kept a sourceId nothing could
+/// resolve and the library showed no source for any of them.
+String resolveBackupSourceId(
+    String backupName, Map<String, String> installed) {
+  if (backupName.isEmpty) return backupName;
+  // Our own .tachibk exports write the Foxlations sourceId into the name.
+  if (installed.containsKey(backupName)) return backupName;
+
+  String norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  final want = norm(backupName);
+  if (want.isEmpty) return backupName;
+
+  // Exact (normalised) name first — "Asura Scans" == "asurascans".
+  for (final e in installed.entries) {
+    if (norm(e.value) == want) return e.key;
+  }
+  // Then containment, which catches "Asura Scans (EN)" vs "Asura Scans".
+  for (final e in installed.entries) {
+    final n = norm(e.value);
+    if (n.isEmpty) continue;
+    if (n.contains(want) || want.contains(n)) return e.key;
+  }
+  return backupName; // imported, but it won't open until the source exists
 }
 
 /// Unwrap a backup file down to raw protobuf bytes.
