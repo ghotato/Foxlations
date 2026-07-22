@@ -43,18 +43,33 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Version/build resolution — pubspec.yaml is the source of truth, so no flags
+# are needed for a normal build:
+#   * If pubspec's build suffix (+N) is already AHEAD of the last build folder,
+#     someone (me) hand-set it for a milestone — respect it as-is, don't bump.
+#   * Otherwise auto-bump: next folder number + patch version.
+# --build / --version still override everything for one-off manual control.
+last=$(ls -d builds/build-* 2>/dev/null | sed 's#.*/build-##' | sort -n | tail -1 || true)
+last=$(( 10#${last:-0} ))
+
+cur=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d '[:space:]')
+base=${cur%%+*}
+pubBuild=${cur##*+}
+case "$pubBuild" in ''|*[!0-9]*) pubBuild=0 ;; esac  # guard non-numeric
+
 if [ -n "$FORCE_BUILD" ]; then
   N="$FORCE_BUILD"
+elif [ "$pubBuild" -gt "$last" ]; then
+  N="$pubBuild"          # pubspec already ahead — use it
 else
-  last=$(ls -d builds/build-* 2>/dev/null | sed 's#.*/build-##' | sort -n | tail -1 || true)
-  N=$(( 10#${last:-0} + 1 ))
+  N=$(( last + 1 ))      # pubspec stale — auto-bump
 fi
 NNN=$(printf '%03d' "$N")
 
-cur=$(grep '^version:' pubspec.yaml | sed 's/version: //')
-base=${cur%%+*}
 if [ -n "$FORCE_VERSION" ]; then
   NEWVER="${FORCE_VERSION}+${N}"
+elif [ "$pubBuild" -gt "$last" ] && [ "$N" = "$pubBuild" ]; then
+  NEWVER="${base}+${N}"  # keep the hand-set version
 else
   IFS=. read -r MA MI PA <<< "$base"
   NEWVER="${MA}.${MI}.$((PA + 1))+${N}"
