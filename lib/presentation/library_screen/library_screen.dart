@@ -13,6 +13,7 @@ import '../../core/models/library_settings.dart';
 import '../../core/utils/library_query.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
+import '../widgets/update_prompt.dart';
 import './widgets/library_options_sheet.dart';
 import './widgets/library_stats_widget.dart';
 
@@ -112,6 +113,13 @@ class _LibraryScreenState extends State<LibraryScreen>
     super.initState();
     _loadBookmarks();
     _loadLibrarySettings();
+
+    // Throttled to once every 12 hours inside the service, and it swallows its
+    // own failures — a missing network or an unreachable site must never block
+    // the library from loading.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) UpdatePrompt.maybeShow(context);
+    });
   }
 
   Future<void> _loadLibrarySettings() async {

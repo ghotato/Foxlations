@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../theme/app_theme.dart';
+import '../../widgets/update_prompt.dart';
 
 class AboutSettingsPage extends StatefulWidget {
   const AboutSettingsPage({super.key});
@@ -125,23 +126,11 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 ? const Color(0xFF0D2E1E)
                 : const Color(0xFFE6F7EF),
             title: 'Check for Updates',
-            subtitle: 'You are on the latest version',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Already on the latest version',
-                    style: GoogleFonts.manrope(fontSize: 13),
-                  ),
-                  backgroundColor: cs.surfaceContainerHighest,
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(AppTheme.radiusMedium),
-                  ),
-                ),
-              );
-            },
+            subtitle: 'See if a newer build has been released',
+            // Previously this always claimed "Already on the latest version"
+            // without checking anything. It now reads the same latest.json the
+            // download page uses, so the app and site can't disagree.
+            onTap: () => UpdatePrompt.maybeShow(context, force: true),
           ),
           const SizedBox(height: 8),
           _SectionHeader(title: 'Legal'),
@@ -213,6 +202,17 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Text all over the app is easier to read — subtitles, '
+                'captions, placeholders and dividers were too dim against the '
+                'background, and buttons could show white text on a light '
+                'colour. Toasts now stand out from the page instead of '
+                'blending into it'),
+            _ChangelogItem('Reader: loading spinners, error messages and page '
+                'placeholders now follow your chosen background colour — on a '
+                'white background they were white on white, so invisible'),
+            _ChangelogItem('Check for Updates actually checks now — it tells '
+                'you when a new build is out and what changed. Android can '
+                'download it directly; on iPhone AltStore handles the update'),
             _ChangelogItem('Restoring a Tachiyomi/Mihon/Tachimanga backup now '
                 'links each manga to the right installed source — before, '
                 'everything came back with no source and wouldn\'t open'),

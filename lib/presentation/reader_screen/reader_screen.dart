@@ -229,14 +229,16 @@ class _ReaderBodyState extends State<_ReaderBody>
         SystemChrome.setEnabledSystemUIMode(reader.settings.fullscreen
             ? SystemUiMode.immersiveSticky
             : SystemUiMode.edgeToEdge);
+        final onBg = _onBgFor(reader.settings.bgColor, context);
+        _onBg = onBg;
         return Scaffold(
           backgroundColor: _bgColorFor(reader.settings.bgColor, context),
           body: Stack(
             children: [
               // Page content
               if (reader.isLoading && reader.pages.isEmpty)
-                const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+                Center(
+                  child: CircularProgressIndicator(color: onBg),
                 )
               else if (reader.error != null && reader.pages.isEmpty)
                 _buildError(reader)
@@ -267,17 +269,25 @@ class _ReaderBodyState extends State<_ReaderBody>
     );
   }
 
+  /// Foreground for anything painted directly on the reader background.
+  ///
+  /// Cached so the page/error builders don't need a BuildContext threaded
+  /// through them; set from build() where the background is already resolved.
+  /// Defaults to white for the common dark case before the first build.
+  Color _onBg = Colors.white;
+
   Widget _buildError(ReaderProvider reader) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white54, size: 48),
+          Icon(Icons.error_outline_rounded,
+              color: _onBg.withAlpha(190), size: 48),
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(reader.error!,
-                style: GoogleFonts.manrope(color: Colors.white70, fontSize: 13),
+                style: GoogleFonts.manrope(color: _onBg.withAlpha(210), fontSize: 13),
                 textAlign: TextAlign.center),
           ),
           const SizedBox(height: 16),
@@ -359,11 +369,11 @@ class _ReaderBodyState extends State<_ReaderBody>
               width: double.infinity,
               height: double.infinity,
               translatedBytes: _isTranslationActive ? _koharuImageCache[i] : null,
-              placeholder: const Center(
-                child: CircularProgressIndicator(color: Colors.white54),
+              placeholder: Center(
+                child: CircularProgressIndicator(color: _onBg.withAlpha(150)),
               ),
-              errorWidget: const Center(
-                child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48),
+              errorWidget: Center(
+                child: Icon(Icons.broken_image_rounded, color: _onBg.withAlpha(150), size: 48),
               ),
             );
             if (filter != null) {
@@ -444,10 +454,10 @@ class _ReaderBodyState extends State<_ReaderBody>
               return Container(
                 padding: const EdgeInsets.symmetric(vertical: 48),
                 child: Column(children: [
-                  const CircularProgressIndicator(color: Colors.white54),
+                  CircularProgressIndicator(color: _onBg.withAlpha(150)),
                   const SizedBox(height: 16),
                   Text('Loading next chapter...',
-                      style: GoogleFonts.manrope(fontSize: 13, color: Colors.white38)),
+                      style: GoogleFonts.manrope(fontSize: 13, color: _onBg.withAlpha(165))),
                 ]),
               );
             }
@@ -462,8 +472,8 @@ class _ReaderBodyState extends State<_ReaderBody>
             // Auto-loading triggered by _onPositionChanged
             return Container(
               padding: const EdgeInsets.symmetric(vertical: 32),
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white24),
+              child: Center(
+                child: CircularProgressIndicator(color: _onBg.withAlpha(120)),
               ),
             );
           }
@@ -501,9 +511,9 @@ class _ReaderBodyState extends State<_ReaderBody>
         File(path),
         fit: BoxFit.fitWidth,
         width: double.infinity,
-        errorBuilder: (_, __, ___) => const SizedBox(
+        errorBuilder: (_, __, ___) => SizedBox(
           height: 400,
-          child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
+          child: Center(child: Icon(Icons.broken_image_rounded, color: _onBg.withAlpha(150), size: 48)),
         ),
       );
     } else {
@@ -513,13 +523,13 @@ class _ReaderBodyState extends State<_ReaderBody>
         fit: BoxFit.fitWidth,
         width: double.infinity,
         translatedBytes: translatedBytes,
-        placeholder: const SizedBox(
+        placeholder: SizedBox(
           height: 400,
-          child: Center(child: CircularProgressIndicator(color: Colors.white54)),
+          child: Center(child: CircularProgressIndicator(color: _onBg.withAlpha(150))),
         ),
-        errorWidget: const SizedBox(
+        errorWidget: SizedBox(
           height: 400,
-          child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
+          child: Center(child: Icon(Icons.broken_image_rounded, color: _onBg.withAlpha(150), size: 48)),
         ),
       );
     }
@@ -538,23 +548,23 @@ class _ReaderBodyState extends State<_ReaderBody>
         children: [
           if (boundary.prevChapterName != null)
             Text('Finished: ${boundary.prevChapterName}',
-                style: GoogleFonts.manrope(fontSize: 12, color: Colors.white38),
+                style: GoogleFonts.manrope(fontSize: 12, color: _onBg.withAlpha(165)),
                 textAlign: TextAlign.center),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Row(children: [
-              const Expanded(child: Divider(color: Colors.white24)),
+              Expanded(child: Divider(color: _onBg.withAlpha(120))),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Icon(Icons.arrow_downward_rounded, color: cs.primary, size: 20),
               ),
-              const Expanded(child: Divider(color: Colors.white24)),
+              Expanded(child: Divider(color: _onBg.withAlpha(120))),
             ]),
           ),
           if (boundary.nextChapterName != null)
             Text(boundary.nextChapterName!,
                 style: GoogleFonts.manrope(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white70),
+                    fontSize: 14, fontWeight: FontWeight.w700, color: _onBg.withAlpha(200)),
                 textAlign: TextAlign.center),
         ],
       ),
@@ -575,12 +585,12 @@ class _ReaderBodyState extends State<_ReaderBody>
         Text(
           isLast ? 'You\'re all caught up!' : 'End of Chapter',
           style: GoogleFonts.manrope(
-              fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white70),
+              fontSize: 16, fontWeight: FontWeight.w700, color: _onBg.withAlpha(200)),
         ),
         const SizedBox(height: 8),
         if (isLast)
           Text('This is the latest chapter available.',
-              style: GoogleFonts.manrope(fontSize: 13, color: Colors.white38),
+              style: GoogleFonts.manrope(fontSize: 13, color: _onBg.withAlpha(165)),
               textAlign: TextAlign.center)
         else if (onNext != null)
           FilledButton.icon(
@@ -665,7 +675,7 @@ class _ReaderBodyState extends State<_ReaderBody>
                     style: GoogleFonts.manrope(
                       fontSize: reader.settings.fontSize * 0.6875,
                       fontWeight: FontWeight.w500,
-                      color: Colors.white70,
+                      color: _onBg.withAlpha(200),
                     ),
                   ),
               ],
@@ -747,7 +757,7 @@ class _ReaderBodyState extends State<_ReaderBody>
                     style: GoogleFonts.manrope(
                       fontSize: reader.settings.fontSize * 0.75,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white70,
+                      color: _onBg.withAlpha(200),
                     ),
                   ),
               ],
@@ -812,9 +822,9 @@ class _ReaderBodyState extends State<_ReaderBody>
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Text(_selectedProviderName,
-                          style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white70)),
+                          style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w700, color: _onBg.withAlpha(200))),
                       const SizedBox(width: 3),
-                      const Icon(Icons.expand_more_rounded, size: 13, color: Colors.white54),
+                      Icon(Icons.expand_more_rounded, size: 13, color: _onBg.withAlpha(150)),
                     ]),
                   ),
                 ),
@@ -1169,6 +1179,18 @@ class _ReaderBodyState extends State<_ReaderBody>
   }
 
   // ── Settings helpers ──────────────────────────────────────────────────
+
+  /// Foreground for overlays drawn straight onto the reader background.
+  ///
+  /// The background is user-selectable and can be **white**, so the hardcoded
+  /// `Colors.white` spinners, error text and placeholders these replace were
+  /// invisible (1:1 contrast) for anyone using the White or light Automatic
+  /// theme. Derive from the actual background instead.
+  Color _onBgFor(String name, BuildContext context) =>
+      ThemeData.estimateBrightnessForColor(_bgColorFor(name, context)) ==
+              Brightness.dark
+          ? Colors.white
+          : Colors.black87;
 
   Color _bgColorFor(String name, BuildContext context) {
     switch (name) {

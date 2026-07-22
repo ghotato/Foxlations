@@ -2,7 +2,9 @@
 # One command → both artifacts in ONE builds/build-NNN/ folder:
 #   1. builds the Android APK locally (bumps version, stages build-NNN + notes),
 #   2. commits + pushes the source so the iOS runner builds the SAME version,
-#   3. triggers the iOS workflow, which scp's its .ipa back into the SAME folder.
+#   3. the push triggers the iOS workflow (no token needed — ios-build.yml fires
+#      on a push that changes pubspec.yaml), which scp's its .ipa back into the
+#      SAME folder, and finally the download page is republished.
 #
 #   scripts/release.sh [notes_file] [--build N] [--version X.Y.Z] [--wait]
 #                      [--no-ios] [--yes]
@@ -20,12 +22,14 @@
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-WAIT=0; NO_IOS=0; ASSUME_YES=0; PASSTHRU=()
+WAIT=0; NO_IOS=0; ASSUME_YES=0; SITE_DIR="${FOXLATIONS_WEB_DIR:-}"; PASSTHRU=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --wait)    WAIT=1; shift ;;
     --no-ios)  NO_IOS=1; shift ;;
     --yes|-y)  ASSUME_YES=1; shift ;;
+    --site)    SITE_DIR="$2"; shift 2 ;;
+    --no-site) SITE_DIR=""; shift ;;
     *)         PASSTHRU+=("$1"); shift ;;
   esac
 done
@@ -42,8 +46,26 @@ git remote get-url origin >/dev/null 2>&1 || die "no 'origin' remote configured"
 SLUG=$(git remote get-url origin \
   | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')
 
-# ── 1. Local Android build ──────────────────────────────────────────────────
-scripts/build_android.sh ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+# ── 1. Android build ────────────────────────────────────────────────────────
+# The toolchain (Flutter, JDK, Android SDK, Rust) lives in the code-server
+# CONTAINER; the TrueNAS host has none of it and can't apt-get one. But the
+# host is the only side with git credentials and access to the caddy dataset.
+# So when run from the host, hand just the build to the container — both see
+# the same files, since /mnt/SSDs/Odysseus and /config/workspace are the same
+# ZFS dataset.
+BUILD_CONTAINER="${FOXLATIONS_BUILD_CONTAINER:-ix-code-server-code-server-1}"
+if [ -x "${FLUTTER_BIN:-/home/coder/flutter/bin}/flutter" ] \
+   || command -v flutter >/dev/null 2>&1; then
+  scripts/build_android.sh ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+elif command -v docker >/dev/null 2>&1 \
+     && docker inspect "$BUILD_CONTAINER" >/dev/null 2>&1; then
+  echo "==> No local Flutter — building inside ${BUILD_CONTAINER}"
+  docker exec -u coder -w /config/workspace/Test/Main "$BUILD_CONTAINER" \
+    scripts/build_android.sh ${PASSTHRU[@]+"${PASSTHRU[@]}"}
+else
+  die "no Flutter toolchain here, and container '${BUILD_CONTAINER}' not found.
+    Set FOXLATIONS_BUILD_CONTAINER, or run this from inside the container."
+fi
 
 # ── 2. What did it just produce? ────────────────────────────────────────────
 NNN=$(ls -d builds/build-* 2>/dev/null | sed 's#.*/build-##' | sort -n | tail -1)
@@ -57,6 +79,27 @@ APK=$(ls "${OUT}"/*.apk 2>/dev/null | head -1) || true
 echo
 echo "==> build ${NNN}  version ${VERSION}"
 echo "    APK: ${APK} ($(ls -lh "$APK" | awk '{print $5}'))"
+
+# The notes file is copied, never generated — so running twice without editing
+# it republishes the PREVIOUS release's notes to the download page, the AltStore
+# manifest and the in-app update prompt. Compare against the last build's body
+# (everything after BUILD_INFO's header) and say so loudly.
+PREV_NNN=$(ls -d builds/build-* 2>/dev/null | sed 's#.*/build-##' | sort -n \
+  | tail -2 | head -1)
+if [ -n "$PREV_NNN" ] && [ "$PREV_NNN" != "$NNN" ] \
+   && [ -f "builds/build-${PREV_NNN}/BUILD_INFO.txt" ]; then
+  if diff -q \
+      <(sed '1,/^$/d' "builds/build-${PREV_NNN}/BUILD_INFO.txt") \
+      <(sed '1,/^$/d' "${OUT}/BUILD_INFO.txt") >/dev/null 2>&1; then
+    echo
+    echo "    ****************************************************************"
+    echo "    WARNING: release notes are IDENTICAL to build ${PREV_NNN}."
+    echo "    The site, AltStore and the in-app update prompt will all show"
+    echo "    stale notes. Edit notes.txt before releasing."
+    echo "    ****************************************************************"
+    echo
+  fi
+fi
 
 if [ "$NO_IOS" = "1" ]; then
   echo "==> --no-ios: stopping after the Android build."
@@ -84,60 +127,12 @@ git add -A
 git commit -m "build ${NNN} (${VERSION})" || echo "==> nothing new to commit"
 git push -u origin "$BRANCH"
 
-# ── 4. Trigger the iOS workflow ─────────────────────────────────────────────
-# The APK already exists at this point, so a failure here must NOT read as a
-# failed release — report precisely what's missing and how to finish by hand.
-trigger_manually() {
-  cat <<EOF
-
-==> Could not trigger the iOS build automatically: $1
-    The APK is built and the source is pushed, so just start the run yourself:
-      GitHub → Actions → "iOS build → server" → Run workflow
-      build_number = ${N}      version = ${VERSION}
-    Or set a token and re-run just the trigger:
-      export GH_TOKEN=<PAT with 'actions: write'>
-EOF
-  exit 0
-}
-
-echo "==> Triggering iOS build ${NNN} (${VERSION})..."
-if command -v gh >/dev/null 2>&1; then
-  gh workflow run ios-build.yml --ref "$BRANCH" \
-    -f build_number="${N}" -f version="${VERSION}" \
-    || trigger_manually "gh workflow run failed"
-else
-  # No gh CLI on this host — use the REST API. Token, in order of preference:
-  #   $GH_TOKEN / $GITHUB_TOKEN → ~/.config/foxlations/gh_token → git credential
-  TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
-  TOKEN_FILE="${HOME}/.config/foxlations/gh_token"
-  if [ -z "$TOKEN" ] && [ -r "$TOKEN_FILE" ]; then
-    TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE")
-  fi
-  if [ -z "$TOKEN" ] && [ -n "$(git config --get credential.helper || true)" ]; then
-    # Only safe to ask when a helper is configured; otherwise git would prompt.
-    TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' \
-      | git credential fill 2>/dev/null | sed -n 's/^password=//p' || true)
-  fi
-  [ -n "$TOKEN" ] || trigger_manually "no GitHub token found (tried \$GH_TOKEN, $TOKEN_FILE, git credential)"
-
-  BODY=$(printf '{"ref":"%s","inputs":{"build_number":"%s","version":"%s"}}' \
-    "$BRANCH" "$N" "$VERSION")
-  RESP=$(mktemp)
-  CODE=$(curl -sS -o "$RESP" -w '%{http_code}' -X POST \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${SLUG}/actions/workflows/ios-build.yml/dispatches" \
-    -d "$BODY" || echo 000)
-  if [ "$CODE" != "204" ]; then
-    echo "    HTTP ${CODE}: $(head -c 400 "$RESP")" >&2
-    rm -f "$RESP"
-    trigger_manually "the dispatch API returned HTTP ${CODE}"
-  fi
-  rm -f "$RESP"
-fi
-echo "==> iOS build queued."
-
+# ── 4. The iOS build ────────────────────────────────────────────────────────
+# No API call, and therefore no token: ios-build.yml triggers on a push that
+# changes pubspec.yaml, and step 1 always bumps the version. The push above IS
+# the trigger. (Dispatching here as well would start a second, duplicate run.)
+echo "==> iOS build triggered by the push (pubspec.yaml changed)."
+echo "    Watch: https://github.com/${SLUG}/actions"
 # ── 5. Optionally wait for the IPA to be delivered ──────────────────────────
 if [ "$WAIT" = "1" ]; then
   echo "==> Waiting for the IPA to land in ${OUT}/ (Ctrl-C to stop waiting)..."
@@ -154,6 +149,13 @@ if [ "$WAIT" = "1" ]; then
   if [ -n "$IPA" ]; then
     echo "==> IPA delivered: ${IPA} ($(ls -lh "$IPA" | awk '{print $5}'))"
   fi
+fi
+
+# ── 6. Refresh the download page ────────────────────────────────────────────
+# Runs last so it picks up the IPA too when --wait was used.
+if [ -n "$SITE_DIR" ]; then
+  echo "==> Publishing the download page to ${SITE_DIR}"
+  scripts/publish_web.sh --build "$N" --dest "$SITE_DIR"
 fi
 
 cat <<EOF

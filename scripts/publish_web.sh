@@ -109,34 +109,91 @@ json_escape() {
 }
 NOTES_JSON=$(printf '%s\n' "$NOTES" | json_escape)
 
+# The app-level description is what someone reads when deciding to install, so
+# it's a product blurb — NOT the changelog. Per the AltStore schema the release
+# notes belong on the version object instead (BUILD_INFO notes are developer
+# facing and read as noise on a store page).
+APP_DESC_JSON=$(printf '%s\n' \
+  "One reader for manga, manhwa, manhua, light novels and video." \
+  "" \
+  "Add your own sources from any compatible repo, or build one for almost any site with RepoForge — no coding. Foxlations gets past Cloudflare checks, translates pages on-device, downloads chapters for offline reading, and syncs your progress to AniList, MyAnimeList or Kitsu." \
+  "" \
+  "Import an existing library from Tachiyomi, Mihon or Tachimanga, or bring in local .cbz/.cbr/.epub/.pdf files." \
+  "" \
+  "No account, no ads, nothing phoning home." \
+  | json_escape)
+
+# ── Screenshots (shared by the manifest and the page) ───────────────────────
+# AltStore's field is `screenshots` — an earlier version of this script emitted
+# `screenshotURLs`, which isn't in the schema and was simply ignored. A plain
+# URL array is valid; width/height are only required for iPad entries.
+SHOT_DIR="${DEST}/screenshots"
+SHOT_FILES=""
+if [ -d "$SHOT_DIR" ]; then
+  SHOT_FILES=$(find "$SHOT_DIR" -maxdepth 1 -type f \
+    \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
+    | sort)
+fi
+
+SHOTS_JSON=""
+if [ -n "$SHOT_FILES" ]; then
+  shot_entries=""
+  shot_sep=""
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    shot_entries="${shot_entries}${shot_sep}        \"${BASE_URL}/screenshots/$(basename "$s")\""
+    shot_sep=$',\n'
+  done <<< "$SHOT_FILES"
+  SHOTS_JSON=$'\n      "screenshots": [\n'"${shot_entries}"$'\n      ],'
+fi
+
 # ── AltStore / SideStore source ─────────────────────────────────────────────
-# Both the legacy top-level fields and the modern `versions` array are emitted,
-# so old and current AltStore/SideStore builds can both read it.
+# Schema: https://faq.altstore.io/developers/make-a-source
+#
+# `appPermissions` is REQUIRED, and AltStore "will refuse to install any app
+# whose permissions do not match" the downloaded IPA — so the privacy strings
+# are extracted from the real ios/Runner/Info.plist rather than hardcoded here,
+# where they could silently drift out of sync with what actually ships.
 if [ -n "$IPA" ]; then
+  PLIST="ios/Runner/Info.plist"
+  PRIVACY=$(awk '
+    /<key>NS[A-Za-z]+UsageDescription<\/key>/ {
+      key = $0
+      sub(/.*<key>/, "", key); sub(/<\/key>.*/, "", key)
+      if ((getline line) > 0) {
+        val = line
+        sub(/.*<string>/, "", val); sub(/<\/string>.*/, "", val)
+        gsub(/\\/, "\\\\", val); gsub(/"/, "\\\"", val)
+        printf "%s        \"%s\": \"%s\"", sep, key, val
+        sep = ",\n"
+      }
+    }
+  ' "$PLIST" 2>/dev/null)
+
+  # No .entitlements file exists in this project, so the list is genuinely
+  # empty; team- and application-identifier are excluded by AltStore anyway.
+  ENTITLEMENTS=$(grep -oE '<key>[a-z.]*com\.apple\.[A-Za-z0-9.-]+</key>' \
+    ios/Runner/*.entitlements 2>/dev/null \
+    | sed -E 's:.*<key>(.*)</key>:        "\1":' | paste -sd ',\n' - || true)
+
   cat > "${DEST}/altstore.json" <<JSON
 {
   "name": "Foxlations",
-  "identifier": "me.lillq.foxlations",
   "subtitle": "Manga, manhwa, light novels and video — one reader.",
+  "description": "Foxlations is one reader for manga, manhwa, manhua, light novels and video, using extension-based sources you add yourself. No account, no ads, nothing phoning home.",
+  "iconURL": "${BASE_URL}/icon.png",
   "website": "${BASE_URL}",
-  "tintColor": "F97316",
+  "tintColor": "#F97316",
   "apps": [
     {
       "name": "Foxlations",
       "bundleIdentifier": "com.foxlations.mangaReader",
       "developerName": "ghotato",
       "subtitle": "Manga, manhwa, light novels and video — one reader.",
-      "localizedDescription": "${NOTES_JSON}",
+      "localizedDescription": "${APP_DESC_JSON}",
       "iconURL": "${BASE_URL}/icon.png",
-      "tintColor": "F97316",
-      "category": "entertainment",
-      "screenshotURLs": [],
-      "version": "${SEMVER}",
-      "versionDate": "${DATE}",
-      "versionDescription": "${NOTES_JSON}",
-      "downloadURL": "${BASE_URL}/foxlations.ipa",
-      "size": ${IPA_BYTES},
-      "minOSVersion": "15.5",
+      "tintColor": "#F97316",
+      "category": "entertainment",${SHOTS_JSON}
       "versions": [
         {
           "version": "${SEMVER}",
@@ -147,7 +204,15 @@ if [ -n "$IPA" ]; then
           "size": ${IPA_BYTES},
           "minOSVersion": "15.5"
         }
-      ]
+      ],
+      "appPermissions": {
+        "entitlements": [${ENTITLEMENTS:+
+$ENTITLEMENTS
+      }],
+        "privacy": {
+${PRIVACY}
+        }
+      }
     }
   ],
   "news": []
@@ -158,28 +223,48 @@ fi
 # ── Screenshots (optional) ──────────────────────────────────────────────────
 # Drop any images into <dest>/screenshots/ and they appear in a swipeable strip.
 SHOTS_HTML=""
-SHOT_DIR="${DEST}/screenshots"
-if [ -d "$SHOT_DIR" ]; then
-  SHOTS=$(find "$SHOT_DIR" -maxdepth 1 -type f \
-    \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
-    | sort)
-  if [ -n "$SHOTS" ]; then
-    SHOTS_HTML='  <div class="shots">'$'\n'
-    while IFS= read -r s; do
-      b=$(basename "$s")
-      SHOTS_HTML="${SHOTS_HTML}    <img src=\"screenshots/${b}\" alt=\"Foxlations screenshot\" loading=\"lazy\">"$'\n'
-    done <<< "$SHOTS"
-    SHOTS_HTML="${SHOTS_HTML}  </div>"
-  fi
+if [ -n "$SHOT_FILES" ]; then
+  SHOTS_HTML='  <div class="shots">'$'\n'
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    SHOTS_HTML="${SHOTS_HTML}    <img src=\"screenshots/$(basename "$s")\" alt=\"Foxlations screenshot\" loading=\"lazy\">"$'\n'
+  done <<< "$SHOT_FILES"
+  SHOTS_HTML="${SHOTS_HTML}  </div>"
 fi
+
+# ── latest.json ─────────────────────────────────────────────────────────────
+# The page reads this at load time, so the version, sizes and release notes it
+# shows always reflect whatever was published last — even if index.html itself
+# is an older copy. Downloads already point at the stable foxlations.apk/.ipa
+# names, so those never go stale.
+cat > "${DEST}/latest.json" <<JSON
+{
+  "version": "${SEMVER}",
+  "buildNumber": "${BUILDNO}",
+  "fullVersion": "${VERSION}",
+  "date": "${DATE}",
+  "apk": {
+    "url": "foxlations.apk",
+    "size": ${APK_BYTES},
+    "display": "${APK_H}"
+  },
+  "ipa": {
+    "url": "foxlations.ipa",
+    "size": ${IPA_BYTES},
+    "display": "${IPA_H}",
+    "available": $([ -n "$IPA" ] && echo true || echo false)
+  },
+  "notes": "${NOTES_JSON}"
+}
+JSON
 
 # ── Download page ───────────────────────────────────────────────────────────
 apk_card=""
 if [ -n "$APK" ]; then
   apk_card=$(cat <<CARD
-      <a class="dl" href="foxlations.apk" download>
+      <a class="dl" id="dl-apk" data-check="foxlations.apk" href="foxlations.apk" download>
         <span class="os">Android</span>
-        <span class="meta">APK · arm64 · ${APK_H}</span>
+        <span class="meta" id="apk-meta">APK · arm64 · ${APK_H}</span>
         <span class="cta">Download</span>
       </a>
 CARD
@@ -188,15 +273,40 @@ fi
 ipa_card=""
 if [ -n "$IPA" ]; then
   ipa_card=$(cat <<CARD
-      <a class="dl" href="foxlations.ipa" download>
+      <a class="dl" id="dl-ipa" data-check="foxlations.ipa" href="foxlations.ipa" download>
         <span class="os">iPhone &amp; iPad</span>
-        <span class="meta">IPA · unsigned · ${IPA_H}</span>
+        <span class="meta" id="ipa-meta">IPA · unsigned · ${IPA_H}</span>
         <span class="cta">Download</span>
       </a>
 CARD
 )
 else
   ipa_card='      <div class="dl off"><span class="os">iPhone &amp; iPad</span><span class="meta">building…</span><span class="cta">soon</span></div>'
+fi
+
+# Only offer the AltStore source when there is actually an IPA for it to point
+# at — altstore.json is written in the same branch. Showing the card without it
+# would hand users a link that 404s.
+alt_card=""
+if [ -n "$IPA" ]; then
+  # altstore://source?url=… opens AltStore and prompts to add the source,
+  # rather than dumping raw JSON in the browser. Documented at
+  # faq.altstore.io/altstore-classic/trusted-sources. data-check still points at
+  # the manifest, since that's the thing that has to exist on the server — the
+  # deep link itself can't be HEAD-checked.
+  alt_card=$(cat <<CARD
+    <a class="dl alt" id="dl-alt" data-check="altstore.json"
+       href="altstore://source?url=${BASE_URL}/altstore.json">
+      <span class="os">AltStore / SideStore</span>
+      <span class="meta" id="alt-meta">opens AltStore · updates automatically</span>
+      <span class="cta">Add source</span>
+    </a>
+    <div class="altrow">
+      <a href="sidestore://source?url=${BASE_URL}/altstore.json">Open in SideStore</a>
+      <button type="button" id="copy-src" data-url="${BASE_URL}/altstore.json">Copy source URL</button>
+    </div>
+CARD
+)
 fi
 
 cat > "${DEST}/index.html" <<HTML
@@ -223,7 +333,14 @@ cat > "${DEST}/index.html" <<HTML
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:radial-gradient(1200px 700px at 50% -10%, rgba(249,115,22,.18), transparent 60%),var(--bg);
+    /* Three offset washes instead of one flat vignette — warm at the top,
+       a cooler counterpoint low-left, so the page has some depth to it. */
+    background:
+      radial-gradient(900px 520px at 18% -8%, rgba(249,115,22,.20), transparent 62%),
+      radial-gradient(760px 460px at 92% 6%, rgba(236,72,153,.10), transparent 60%),
+      radial-gradient(1000px 700px at 50% 108%, rgba(124,58,237,.12), transparent 62%),
+      var(--bg);
+    background-attachment:fixed;
     color:var(--ink);font-family:var(--sans);line-height:1.55;min-height:100vh;
     padding:max(18px,env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));
     -webkit-font-smoothing:antialiased;
@@ -233,26 +350,54 @@ cat > "${DEST}/index.html" <<HTML
   .back{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--muted);font-size:12.5px;font-weight:600;}
   .back:hover{color:var(--ink);}
   .eyebrow{font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--fox);font-weight:700;margin:2px 0 10px;}
-  .hero{display:flex;gap:16px;align-items:center;margin-bottom:6px;}
-  .hero img{width:72px;height:72px;border-radius:18px;box-shadow:0 14px 30px -14px rgba(249,115,22,.8);}
+  .hero{display:flex;gap:18px;align-items:center;margin-bottom:6px;}
+  /* No drop-shadow: the icon art is transparent, so a glow behind it bled out
+     past the artwork and got clipped by the rounded corners. A contained tile
+     with an inset hairline reads as intentional instead. */
+  .hero .mark{
+    width:76px;height:76px;flex:0 0 auto;border-radius:20px;display:grid;place-items:center;
+    background:linear-gradient(160deg, rgba(249,115,22,.16), rgba(249,115,22,.04));
+    border:1px solid rgba(249,115,22,.28);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .hero .mark img{width:58px;height:58px;display:block;}
   h1{font-family:var(--serif);font-weight:600;font-style:italic;font-size:clamp(34px,10vw,48px);line-height:.98;margin:0 0 6px;letter-spacing:-.01em;}
   .sub{color:var(--muted);font-size:14px;margin:0;}
   .sub b{color:var(--ink);font-weight:600;}
-  .ver{display:inline-flex;align-items:center;gap:8px;margin:16px 0 22px;font-family:var(--mono);font-size:12.5px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;}
+  .ver{display:inline-flex;align-items:center;gap:8px;margin:18px 0 22px;font-family:var(--mono);font-size:12.5px;
+    color:var(--muted);border:1px solid rgba(110,231,183,.28);border-radius:999px;padding:7px 14px;
+    background:linear-gradient(180deg, rgba(110,231,183,.10), rgba(110,231,183,.03));}
   .ver b{color:var(--ink);}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 10px var(--mint);}
   .dls{display:grid;gap:10px;margin-bottom:26px;}
-  .dl{display:grid;grid-template-columns:1fr auto;grid-template-areas:"os cta" "meta cta";
-    text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:16px;
-    padding:14px 16px;align-items:center;transition:.15s;}
-  .dl:hover{border-color:var(--fox);transform:translateY(-1px);}
-  .dl .os{grid-area:os;font-weight:700;font-size:15px;color:var(--ink);}
-  .dl .meta{grid-area:meta;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .dl{position:relative;display:grid;grid-template-columns:1fr auto;grid-template-areas:"os cta" "meta cta";
+    text-decoration:none;border:1px solid var(--line);border-radius:16px;
+    background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0)) , var(--panel);
+    padding:15px 16px;align-items:center;overflow:hidden;
+    transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease;}
+  /* A warm edge-light that only appears on hover — keeps the resting state calm
+     while making the primary action feel alive when reached for. */
+  .dl::after{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+    background:radial-gradient(420px 120px at 12% 0%, rgba(249,115,22,.16), transparent 70%);
+    opacity:0;transition:opacity .18s ease;}
+  .dl:hover::after{opacity:1;}
+  .dl:hover{box-shadow:0 12px 28px -18px rgba(249,115,22,.85);}
+  .dl:hover{border-color:var(--fox);transform:translateY(-2px);}
+  .dl .os{grid-area:os;font-weight:700;font-size:15.5px;color:var(--ink);position:relative;z-index:1;}
+  .dl .meta{grid-area:meta;font-family:var(--mono);font-size:11.5px;color:var(--muted);position:relative;z-index:1;}
   .dl .cta{grid-area:cta;background:linear-gradient(180deg,var(--fox),var(--fox-deep));color:#fff;
-    font-weight:700;font-size:13px;border-radius:10px;padding:9px 16px;box-shadow:0 8px 18px -8px rgba(249,115,22,.9);}
-  .dl.off{opacity:.5;}
-  .dl.off .cta{background:var(--panel2);color:var(--muted);box-shadow:none;}
+    font-weight:700;font-size:13px;border-radius:10px;padding:10px 18px;position:relative;z-index:1;
+    box-shadow:0 8px 18px -8px rgba(249,115,22,.9);white-space:nowrap;}
+  .dl.off{opacity:.45;pointer-events:none;}
+  .dl.off .cta{background:var(--panel2);color:var(--muted);box-shadow:none;border:1px solid var(--line);}
+  .dl.off::after{display:none;}
   .dl.alt .cta{background:var(--panel2);color:var(--fox);border:1px solid var(--fox);box-shadow:none;}
+  /* Fallbacks under the AltStore card: a custom scheme fails silently when the
+     app isn't installed, so always leave a way to copy the URL by hand. */
+  .altrow{display:flex;gap:14px;align-items:center;justify-content:center;margin:-2px 0 2px;}
+  .altrow a,.altrow button{background:none;border:none;padding:6px 2px;cursor:pointer;
+    font-family:var(--sans);font-size:12px;font-weight:600;color:var(--muted);text-decoration:none;}
+  .altrow a:hover,.altrow button:hover{color:var(--fox);}
   .feat{list-style:none;padding:0;margin:0;}
   .feat li{position:relative;padding-left:20px;margin-bottom:9px;font-size:13.5px;color:var(--muted);}
   .feat li::before{content:"";position:absolute;left:2px;top:8px;width:6px;height:6px;border-radius:50%;
@@ -262,8 +407,13 @@ cat > "${DEST}/index.html" <<HTML
     scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;}
   .shots img{height:min(64vh,460px);width:auto;border-radius:14px;border:1px solid var(--line);
     scroll-snap-align:center;flex:0 0 auto;background:var(--panel);}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:14px;}
-  .card h2{font-family:var(--serif);font-style:italic;font-weight:600;font-size:20px;margin:0 0 10px;}
+  .card{position:relative;border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;margin-bottom:14px;
+    background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)) , var(--panel);}
+  /* Hairline of colour along the top edge so stacked cards don't read as one
+     undifferentiated slab. */
+  .card::before{content:"";position:absolute;left:18px;right:18px;top:-1px;height:1px;
+    background:linear-gradient(90deg, transparent, rgba(249,115,22,.55), transparent);}
+  .card h2{font-family:var(--serif);font-style:italic;font-weight:600;font-size:21px;margin:0 0 12px;}
   .card h3{font-size:13px;font-weight:700;color:var(--fox);margin:14px 0 6px;letter-spacing:.01em;}
   .card h3:first-child{margin-top:0;}
   .card ul{margin:0;padding-left:18px;}
@@ -290,7 +440,7 @@ cat > "${DEST}/index.html" <<HTML
   </div>
 
   <div class="hero">
-    <img src="icon.png" alt="Foxlations icon">
+    <span class="mark"><img src="icon.png" alt="Foxlations icon"></span>
     <div>
       <div class="eyebrow">lillq.me · apps</div>
       <h1>Foxlations</h1>
@@ -298,16 +448,12 @@ cat > "${DEST}/index.html" <<HTML
   </div>
   <p class="sub">One reader for <b>manga</b>, <b>manhwa</b>, <b>manhua</b>, <b>light novels</b> and <b>video</b> — from sources you add yourself. No account, no ads, nothing phoning home.</p>
 
-  <div class="ver"><span class="dot"></span> Latest <b>v${SEMVER}</b> · build ${BUILDNO} · ${DATE}</div>
+  <div class="ver"><span class="dot"></span> Latest <b id="ver-label">v${SEMVER}</b> · <span id="ver-build">build ${BUILDNO} · ${DATE}</span></div>
 
   <div class="dls">
 ${apk_card}
 ${ipa_card}
-    <a class="dl alt" href="altstore.json">
-      <span class="os">AltStore / SideStore</span>
-      <span class="meta">source · auto-updates</span>
-      <span class="cta">Add source</span>
-    </a>
+${alt_card}
   </div>
 
   <div class="card">
@@ -341,12 +487,93 @@ ${SHOTS_HTML}
   </div>
 
   <div class="card">
-    <h2>What's new in v${SEMVER}</h2>
+    <h2>What's new</h2>
+    <div id="notes">
 ${NOTES_HTML}
+    </div>
   </div>
 
-  <footer>build ${NNN} · ${VERSION} · ${DATE}</footer>
+  <footer id="foot">build ${NNN} · ${VERSION} · ${DATE}</footer>
 </div>
+
+<script>
+// Re-read the published manifest so a cached or older index.html still shows
+// the current release. Downloads use stable filenames, so only the labels here
+// can drift. Everything is inserted as text — never innerHTML — so notes can't
+// inject markup.
+(async () => {
+  try {
+    const r = await fetch('latest.json?t=' + Date.now(), {cache: 'no-store'});
+    if (!r.ok) return;
+    const d = await r.json();
+    const set = (sel, text) => {
+      const el = document.querySelector(sel);
+      if (el && text) el.textContent = text;
+    };
+    set('#ver-label', 'v' + d.version);
+    set('#ver-build', 'build ' + d.buildNumber + ' · ' + d.date);
+    set('#apk-meta', 'APK · arm64 · ' + (d.apk?.display || ''));
+    set('#foot', 'build ' + d.buildNumber + ' · ' + d.fullVersion + ' · ' + d.date);
+
+    if (d.ipa?.available) {
+      set('#ipa-meta', 'IPA · unsigned · ' + (d.ipa.display || ''));
+    }
+    const notes = document.querySelector('#notes');
+    if (notes && d.notes) {
+      notes.replaceChildren();
+      for (const line of d.notes.split('\\n')) {
+        const t = line.trim();
+        if (!t) continue;
+        const el = document.createElement(t.startsWith('- ') ? 'li' : 'h3');
+        el.textContent = t.startsWith('- ') ? t.slice(2) : t;
+        notes.appendChild(el);
+      }
+    }
+  } catch (_) {
+    // Offline or manifest missing — the baked-in values stay.
+  }
+})();
+
+// The page is generated from what exists on the BUILD machine, which isn't
+// necessarily what reached the web server — a half-finished upload used to
+// leave a Download button that 404'd (Safari reports it as "Zero KB of Zero
+// KB"). HEAD each target and visibly disable anything that isn't really there.
+(async () => {
+  for (const el of document.querySelectorAll('[data-check]')) {
+    try {
+      const r = await fetch(el.dataset.check + '?t=' + Date.now(),
+                            {method: 'HEAD', cache: 'no-store'});
+      if (r.ok) continue;
+    } catch (_) {
+      // Network failure — fall through and mark it unavailable.
+    }
+    el.classList.add('off');
+    el.removeAttribute('href');
+    const cta = el.querySelector('.cta');
+    if (cta) cta.textContent = 'Unavailable';
+    const meta = el.querySelector('.meta');
+    if (meta) meta.textContent = 'not published yet';
+    // The AltStore fallbacks are meaningless without a manifest to point at.
+    if (el.id === 'dl-alt') document.querySelector('.altrow')?.remove();
+  }
+})();
+
+// Copy-to-clipboard for the source URL, for anyone whose device didn't pick up
+// the altstore:// link (app not installed, or an in-app browser that blocks
+// custom schemes).
+document.querySelector('#copy-src')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  try {
+    await navigator.clipboard.writeText(btn.dataset.url);
+    const was = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = was; }, 1600);
+  } catch (_) {
+    // Clipboard blocked (non-HTTPS or denied) — show it so it can be selected.
+    btn.textContent = btn.dataset.url;
+  }
+});
+</script>
 </body>
 </html>
 HTML

@@ -2,17 +2,25 @@ name: iOS build → server
 
 # Builds an UNSIGNED iOS .ipa on a macOS runner and delivers it to your server
 # over Tailscale (scp) into builds/build-NNN/ — no GitHub Release, nothing stored
-# on GitHub. Triggered by the local orchestrator (scripts/release.sh) via:
-#   gh workflow run ios-build.yml -f build_number=<N> -f version=<A.B.C+N>
+# on GitHub.
+#
+# Triggered by PUSHING a version bump. Every build writes a new `version:` into
+# pubspec.yaml, so that path changing is exactly the signal that a release
+# happened — and it means no API token is needed anywhere: the push you already
+# make IS the trigger. workflow_dispatch is kept for one-off reruns, with both
+# inputs optional since they can be read from pubspec.yaml.
 on:
+  push:
+    branches: [main]
+    paths: ['pubspec.yaml']
   workflow_dispatch:
     inputs:
       build_number:
-        description: 'Build number N (target folder builds/build-NNN)'
-        required: true
+        description: 'Build number N (blank = read from pubspec.yaml)'
+        required: false
       version:
-        description: 'Version string, e.g. 0.0.26+20'
-        required: true
+        description: 'Version string e.g. 0.0.26+20 (blank = pubspec.yaml)'
+        required: false
 
 # Pin to your local Flutter. If the runner can't fetch this exact version,
 # change it to the nearest public stable (Dart constraint is ^3.11.3).
@@ -24,6 +32,25 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      # pubspec.yaml is the single source of truth: `version: 0.0.29+23` gives
+      # both the version string and the build number after the '+'. Manual
+      # dispatch inputs override it when set.
+      - name: Resolve version and build number
+        id: meta
+        run: |
+          V='${{ inputs.version }}'
+          N='${{ inputs.build_number }}'
+          [ -n "$V" ] || V=$(grep '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '[:space:]')
+          [ -n "$N" ] || N="${V##*+}"
+          if [ -z "$V" ] || [ -z "$N" ]; then
+            echo "::error::could not resolve version/build number from pubspec.yaml"
+            exit 1
+          fi
+          echo "version=$V"                        >> "$GITHUB_OUTPUT"
+          echo "build_number=$N"                   >> "$GITHUB_OUTPUT"
+          echo "nnn=$(printf '%03d' "$N")"         >> "$GITHUB_OUTPUT"
+          echo "Building $V as build $N"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -87,7 +114,7 @@ jobs:
         id: pkg
         run: |
           set -euo pipefail
-          NNN=$(printf '%03d' "${{ inputs.build_number }}")
+          NNN="${{ steps.meta.outputs.nnn }}"
           echo "nnn=$NNN" >> "$GITHUB_OUTPUT"
           cd build/ios/iphoneos
           APP=Runner.app
@@ -130,7 +157,7 @@ jobs:
 
           mkdir -p Payload
           cp -R "$APP" Payload/
-          IPA="foxlations-${{ inputs.version }}.ipa"
+          IPA="foxlations-${{ steps.meta.outputs.version }}.ipa"
           zip -qq -r "$IPA" Payload
           echo "ipa=$PWD/$IPA" >> "$GITHUB_OUTPUT"
 

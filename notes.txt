@@ -1,0 +1,53 @@
+Readability pass, in-app update check, and full release automation.
+
+Readability
+- Most secondary text in the app sat below the WCAG AA contrast floor. The
+  root cause: `cs.outline` is Material's BORDER token, but it was being used
+  as secondary text in ~250 places, where #6B6B8A is only 2.73:1 on the panel
+  colour. Raising what `outline` resolves to (#9A9AB8) fixes all of them at
+  once, and also makes borders and dividers visible — at 1.2-1.5:1 they were
+  effectively absent.
+- `onSurfaceVariant` was never defined, so Flutter fell back to `onSurface`
+  and it gave no hierarchy at all. Now an explicit secondary-text token.
+- Filled buttons drew white labels on the accent colour (2.56:1). The label is
+  now derived from the accent, which matters because the accent is
+  user-configurable and several presets are near-white.
+- Text field placeholders, `bodySmall` and `labelSmall` all pointed at the
+  border tone; fixed once in the theme rather than per widget.
+- Toasts: the background was a hair above the page colour, so they read as
+  text floating on the UI. They now have a distinct panel, border and
+  elevation. The label colour is derived from whatever background a caller
+  passes, so error (red) and success (green) toasts stay readable — previously
+  the text colour was hardcoded and a success toast was light-on-light.
+- Reader: spinners, error text and page placeholders were hardcoded to white,
+  but the reader background is user-selectable and can be WHITE — at which
+  point they were invisible (1:1). They now follow the resolved background.
+
+Update check
+- "Check for Updates" in Settings > About was a stub that always claimed you
+  were up to date without checking anything. It now reads the same latest.json
+  the download page is built from, so the app and the site can't disagree.
+- Compares build numbers (one monotonically increasing integer, so there's no
+  dotted-version parsing to get wrong), throttles to once per 12 hours,
+  remembers dismissals, and swallows its own failures so a dead network never
+  delays startup.
+- Android offers the APK download directly, since a sideloaded app has nothing
+  else to update it. iOS shows an informational sheet pointing at AltStore,
+  because iOS cannot install an IPA fetched from a browser — and it stays
+  silent entirely until the IPA is actually published, so it never announces a
+  release AltStore can't fetch.
+
+Release automation
+- The iOS workflow now triggers on a push that changes pubspec.yaml. Every
+  build bumps the version, so that IS the release signal — no API token, no
+  gh CLI. The runner reads the version and build number out of pubspec.yaml
+  itself. Manual dispatch still works, with both inputs optional.
+- scripts/release.sh no longer calls the dispatch API (doing both would start
+  two duplicate macOS runs per release) and publishes the download page as its
+  final step, after the IPA arrives.
+
+Known gaps
+- Stats screen still uses the divider tone for its empty-state icon and
+  heatmap zero-cells (1.3-1.5:1).
+- iOS text recognition remains Latin-only; the CI now reports whether the ML
+  Kit language pods actually resolved.
