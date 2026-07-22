@@ -20,24 +20,36 @@ class SourceSettings {
   /// Skip this source during library update checks.
   final bool excludeFromUpdates;
 
+  /// Ask the site for its desktop layout instead of its phone one.
+  ///
+  /// Some sites serve phones a stripped page that builds its content in the
+  /// browser, so a scraper sees an empty shell — webtoons.com is the known
+  /// case: its episode list is absent from the phone page but present in the
+  /// desktop one. Off by default, because the phone layout is usually lighter
+  /// and every other site works fine with it.
+  final bool requestDesktopSite;
+
   const SourceSettings({
     this.baseUrlOverride = '',
     this.pinned = false,
     this.excludeFromGlobalSearch = false,
     this.excludeFromUpdates = false,
+    this.requestDesktopSite = false,
   });
 
   bool get isDefault =>
       baseUrlOverride.isEmpty &&
       !pinned &&
       !excludeFromGlobalSearch &&
-      !excludeFromUpdates;
+      !excludeFromUpdates &&
+      !requestDesktopSite;
 
   SourceSettings copyWith({
     String? baseUrlOverride,
     bool? pinned,
     bool? excludeFromGlobalSearch,
     bool? excludeFromUpdates,
+    bool? requestDesktopSite,
   }) =>
       SourceSettings(
         baseUrlOverride: baseUrlOverride ?? this.baseUrlOverride,
@@ -45,6 +57,7 @@ class SourceSettings {
         excludeFromGlobalSearch:
             excludeFromGlobalSearch ?? this.excludeFromGlobalSearch,
         excludeFromUpdates: excludeFromUpdates ?? this.excludeFromUpdates,
+        requestDesktopSite: requestDesktopSite ?? this.requestDesktopSite,
       );
 
   // Namespaced separately from `source_pref_*`, which belongs to the extension
@@ -64,10 +77,65 @@ class SourceSettings {
       excludeFromGlobalSearch:
           p.getBool(_k(sourceId, 'no_global_search')) ?? false,
       excludeFromUpdates: p.getBool(_k(sourceId, 'no_updates')) ?? false,
+      requestDesktopSite: p.getBool(_k(sourceId, 'desktop_ua')) ?? false,
     );
   }
 
-  Future<void> save(String sourceId) async {
+  /// Hosts whose requests should carry a desktop User-Agent.
+  ///
+  /// Kept as a flat host set rather than looked up per source because the HTTP
+  /// layer has no idea which source is driving a request — both the JS and Dart
+  /// bridges only ever see a URL. Writing the host here at save time lets that
+  /// layer answer the question with what it already has.
+  static const _desktopHostsKey = 'desktop_ua_hosts';
+
+  static String? _hostOf(String url) {
+    try {
+      final h = Uri.parse(url).host.toLowerCase();
+      if (h.isEmpty) return null;
+      return h.startsWith('www.') ? h.substring(4) : h;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Add or remove [baseUrl]'s host from the desktop-UA set.
+  static Future<void> _syncDesktopHost(String baseUrl, bool wants) async {
+    final host = _hostOf(baseUrl);
+    if (host == null) return;
+    final p = await SharedPreferences.getInstance();
+    final hosts = (p.getStringList(_desktopHostsKey) ?? <String>[]).toSet();
+    if (wants) {
+      hosts.add(host);
+    } else {
+      hosts.remove(host);
+    }
+    await p.setStringList(_desktopHostsKey, hosts.toList());
+    _desktopHosts
+      ..clear()
+      ..addAll(hosts);
+  }
+
+  static final Set<String> _desktopHosts = {};
+
+  /// True when [url]'s host has desktop mode turned on. Synchronous because it
+  /// sits in the request path.
+  static bool wantsDesktopUA(String url) {
+    if (_desktopHosts.isEmpty) return false;
+    final host = _hostOf(url);
+    return host != null && _desktopHosts.contains(host);
+  }
+
+  static Future<void> preloadDesktopHosts() async {
+    final p = await SharedPreferences.getInstance();
+    _desktopHosts
+      ..clear()
+      ..addAll(p.getStringList(_desktopHostsKey) ?? const []);
+  }
+
+  /// [baseUrl] is the source's effective base URL, needed to register its host
+  /// in the desktop-UA set. Pass the override when one is set.
+  Future<void> save(String sourceId, {String baseUrl = ''}) async {
     final p = await SharedPreferences.getInstance();
     if (baseUrlOverride.isEmpty) {
       await p.remove(_k(sourceId, 'base_url'));
@@ -79,6 +147,12 @@ class SourceSettings {
     await p.setStringList(_pinnedKey, pins.toList());
     await p.setBool(_k(sourceId, 'no_global_search'), excludeFromGlobalSearch);
     await p.setBool(_k(sourceId, 'no_updates'), excludeFromUpdates);
+    await p.setBool(_k(sourceId, 'desktop_ua'), requestDesktopSite);
+    final effective =
+        baseUrlOverride.isNotEmpty ? baseUrlOverride : baseUrl;
+    if (effective.isNotEmpty) {
+      await _syncDesktopHost(effective, requestDesktopSite);
+    }
   }
 
   /// Synchronous lookups for hot paths (list sorting, search fan-out) that

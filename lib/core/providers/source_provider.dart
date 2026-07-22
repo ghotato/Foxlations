@@ -64,6 +64,9 @@ class SourceProvider extends ChangeNotifier {
       // SourceSettings.cached() is read from sync hot paths (search fan-out,
       // update loop), so it must be warm before those run.
       await SourceSettings.preload(_installedSources.map((s) => s.source.id));
+      // The HTTP layer checks desktop mode by host on every request and can't
+      // await, so the host set has to be in memory before any source runs.
+      await SourceSettings.preloadDesktopHosts();
 
       // Load cached indexes
       for (final url in _repoUrls) {

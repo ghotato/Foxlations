@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/source_settings.dart';
+
 /// Simple cookie store that persists cookies per domain.
 /// Used to store Cloudflare clearance cookies from WebView.
 class CookieStore {
@@ -51,8 +53,32 @@ class CookieStore {
           'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 '
           'Mobile/15E148 Safari/604.1';
     }
-    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    return desktopUserAgent;
+  }
+
+  /// The UA sent for sources with "request desktop site" on.
+  ///
+  /// Some sites branch their markup on this string: webtoons.com omits the
+  /// episode list entirely from the page it serves phones, so a scraper reading
+  /// it finds nothing. Asking as a desktop browser gets the full page.
+  static const String desktopUserAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+  /// The User-Agent for a request to [url], honouring per-source desktop mode.
+  ///
+  /// Deliberately yields to an existing Cloudflare clearance: `cf_clearance` is
+  /// bound to the UA that solved the challenge, so swapping it afterwards
+  /// invalidates the cookie and re-triggers the challenge on every request.
+  /// Desktop mode therefore applies only where no clearance is held.
+  Future<String> userAgentFor(String url) async {
+    if (SourceSettings.wantsDesktopUA(url)) {
+      final cookie = await getCookieHeader(url);
+      if (cookie == null || !cookie.contains('cf_clearance')) {
+        return desktopUserAgent;
+      }
+    }
+    return getUserAgent();
   }
 
   /// Multi-label public suffixes where the "last two labels" are NOT a single

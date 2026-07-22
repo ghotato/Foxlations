@@ -1,27 +1,18 @@
-Foxlations is now open source, plus fixes for source icons, repo names, and
-Webtoons in RepoForge.
+A follow-up to the last release: Webtoons works properly now, and there's a new
+per-source option for sites that treat phones differently.
 
-Open source
-- The full source is now public under the Apache 2.0 licence:
-  https://github.com/ghotato/Foxlations
-- Every release is published to GitHub Releases as well as the download page,
-  so the APK and IPA can be grabbed from either.
-
-Sources & extensions
-- Sources now show their real icon instead of a coloured letter tile. Repos
-  that publish icons alongside their extension list are picked up
-  automatically; anything without one still falls back to the letter.
-- A source installed from an external repo now shows which repo it came from
-  (keiyoushi, yuzono, and so on) instead of just saying "custom".
+Sources
+- New "Request desktop site" option in a source's settings. Some sites send
+  phones a cut-down page with the real content missing, so a source reading it
+  finds nothing. Turn this on and that source asks for the full desktop page
+  instead. Worth trying whenever a source comes up empty, or opens but lists no
+  chapters.
 
 RepoForge
-- Fixed Webtoons. Its built-in browse addresses were wrong and the site
-  answered them with an error, so every attempt came back "no manga found".
-  Browsing and search work now.
+- Webtoons: chapter lists now load once "Request desktop site" is on, and
+  browsing works whether the site serves its phone or its desktop layout. The
+  previous release only matched the phone one.
 
-Known gaps
-- Webtoons chapter lists still don't load. The site builds its episode list in
-  the browser instead of sending it with the page, so there is nothing for the
-  scraper to read. Browsing and search are unaffected.
-- A few other built-in site addresses may have the same fault Webtoons did.
-  They're being checked, and any that are wrong will be fixed the same way.
+Notes
+- Desktop mode steps aside on sites behind a Cloudflare check, so turning it on
+  can't force you to solve the check again.

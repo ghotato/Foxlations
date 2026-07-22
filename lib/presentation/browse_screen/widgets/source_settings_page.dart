@@ -278,6 +278,21 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           subtitle: Text('Don\'t check this source for new chapters',
               style: GoogleFonts.manrope(fontSize: 12.5, color: cs.outline)),
         ),
+        SwitchListTile(
+          value: o.requestDesktopSite,
+          onChanged: (v) => _saveOptions(o.copyWith(requestDesktopSite: v)),
+          activeThumbColor: cs.primary,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          title: Text('Request desktop site',
+              style: GoogleFonts.manrope(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurface)),
+          subtitle: Text(
+              'Try this if the source finds nothing, or shows no chapters — '
+              'some sites send phones a cut-down page',
+              style: GoogleFonts.manrope(fontSize: 12.5, color: cs.outline)),
+        ),
       ],
     );
   }
@@ -322,7 +337,9 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
 
   Future<void> _saveOptions(SourceSettings next) async {
     setState(() => _options = next);
-    await next.save(widget.source.id);
+    // baseUrl is needed so the source's host can be added to (or removed from)
+    // the desktop-UA set the HTTP layer consults.
+    await next.save(widget.source.id, baseUrl: widget.source.baseUrl);
     SourceSettings.updateCache(widget.source.id, next);
   }
 

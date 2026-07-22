@@ -38,7 +38,8 @@ class JsHttpClient {
   static Future<Map<String, String>> _buildHeaders(
       String url, Map<String, String> headers) async {
     final h = Map<String, String>.from(headers);
-    h['User-Agent'] = await _cookies.getUserAgent();
+    // Honours per-source desktop mode; otherwise the stored/platform UA.
+    h['User-Agent'] = await _cookies.userAgentFor(url);
     final cookie = await _cookies.getCookieHeader(url);
     if (cookie != null && cookie.isNotEmpty) {
       h['Cookie'] = h['Cookie'] != null && h['Cookie']!.isNotEmpty

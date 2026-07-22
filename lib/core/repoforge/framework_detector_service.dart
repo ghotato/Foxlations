@@ -1480,11 +1480,14 @@ class FrameworkDetectorService {
     'ZManga': {'item': 'div.flexbox2-item', 'title': 'div.flexbox2-title > span', 'cover': 'img', 'chapters': 'ul.series-chapterlist div.flexch-infoz a', 'page_images': 'div.reader-area img'},
     'Multi-Chan': {'item': 'div.content_row', 'cover': 'img#cover', 'chapters': 'table.table_cha tr:gt(1)', 'detailTitle': 'h1'},
     'Comici Viewer': {'item': 'div.series-list-item', 'title': 'div.series-list-item-h span', 'cover': 'img.series-list-item-img'},
-    // Verified against webtoons.com/en/top and /en/dailySchedule: item/title/
-    // cover each match exactly one per card (30 and 155 respectively). No
-    // `chapters` entry on purpose — the series page ships its episode list as an
-    // embedded JS object, not markup, so no CSS selector can reach it.
-    'Webtoon (LINE/NAVER)': {'item': 'a.link._titleItem', 'title': 'strong.title', 'cover': 'div.image_wrap img', 'page_images': 'div.viewer_lst img'},
+    // Webtoons serves DIFFERENT markup per User-Agent, so selectors must match
+    // both or they break on one. Mobile cards are `a.link._titleItem`, desktop
+    // ones `a.link._ranking_title_a` — hence the bare `a.link`, which matches
+    // either, and `strong.title`, verified at 30/30 under both agents.
+    // `chapters` only resolves under a DESKTOP agent (10 vs 0 episode rows):
+    // the mobile page builds its episode list client-side. See the note on
+    // Popular/Latest in _frameworkEndpoints.
+    'Webtoon (LINE/NAVER)': {'item': 'ul.webtoon_list li a.link', 'title': 'strong.title', 'cover': 'img', 'chapters': 'li._episodeItem a', 'detailTitle': "meta[property='og:title']", 'page_images': 'img._images'},
     'GoDa': {'item': '.container > .cardlist .pb-2 a', 'title': 'h3', 'cover': 'img', 'chapters': '.chapteritem', 'page_images': '#chapcontent > div > img'},
     'InitManga': {'item': 'div.manga-item-grid > div.uk-panel', 'title': 'h3 a', 'cover': 'img', 'chapters': 'div.chapter-item', 'page_images': 'div#chapter-content img[src]'},
     'MangaWork': {'item': "div.w-full.h-full", 'title': 'h1', 'cover': 'img', 'chapters': '#chapter_list li', 'page_images': 'div.reader-area img#imagech'},
@@ -1668,9 +1671,13 @@ class FrameworkDetectorService {
         };
       case 'Webtoon (LINE/NAVER)':
         return {
+          // Viewer images are lazy-loaded: the real URL lives in data-url on
+          // img._images, while src holds a placeholder until scripts run.
+          // og:image is used for the cover because it is the one field the
+          // mobile and desktop pages agree on.
           'imageSelectors': {
-            'cover': 'span.thmb img',
-            'chapterImages': 'div.viewer_lst img',
+            'cover': "meta[property='og:image']",
+            'chapterImages': 'img._images',
             'lazyAttr': 'data-url',
           },
           'videoSelectors': {},
@@ -2184,14 +2191,14 @@ class FrameworkDetectorService {
         ];
       case 'Webtoon (LINE/NAVER)':
         return [
-          // /en/genre/all?sortOrder=... was guessed and is dead: it answers
-          // HTTP 500, so a generated source got no rows and reported "no manga
-          // found". These two are verified to return 200 with a full listing in
-          // the raw HTML (30 and 155 cards) — the /genre and per-genre pages
-          // render their listings client-side and are useless to a plain GET.
+          // /en/genre/all?sortOrder=... was guessed and is dead — HTTP 500
+          // under both mobile and desktop agents, so a generated source got no
+          // rows and reported "no manga found". Both paths below are verified
+          // to return 200 with the listing present in the raw HTML (30 and
+          // ~155 cards) regardless of User-Agent.
           {
             'name': 'Popular',
-            'path': '/en/top',
+            'path': '/en/ranking/trending',
             'status': 'found',
             'type': 'list',
           },

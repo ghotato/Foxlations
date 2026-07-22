@@ -91,8 +91,9 @@ class _HttpClient {
     if (cookieHeader != null) {
       merged['Cookie'] = cookieHeader;
     }
-    final storedUA = await CookieStore().getUserAgent();
-    merged.putIfAbsent('User-Agent', () => storedUA);
+    // Honours per-source desktop mode; otherwise the stored/platform UA.
+    final ua = await CookieStore().userAgentFor(url);
+    merged.putIfAbsent('User-Agent', () => ua);
     return merged;
   }
 

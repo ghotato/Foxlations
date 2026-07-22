@@ -239,20 +239,17 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ChangelogItem('Foxlations is now open source, under the Apache 2.0 '
-                'licence. The full code is on GitHub, and each release is '
-                'published there as well as on the download page.'),
-            _ChangelogItem('Sources now show their real icon instead of a '
-                'coloured letter tile. Repos that publish icons alongside '
-                'their extension list are picked up automatically.'),
-            _ChangelogItem('A source installed from an external repo now shows '
-                'which repo it came from — keiyoushi, yuzono, and so on — '
-                'instead of just saying "custom".'),
-            _ChangelogItem('RepoForge: fixed Webtoons. Its built-in browse '
-                'addresses were wrong and the site answered with an error, so '
-                'every attempt came back "no manga found". Browsing and search '
-                'work now; chapter lists still don\'t, because Webtoons builds '
-                'those in the browser rather than sending them with the page.'),
+            _ChangelogItem('New "Request desktop site" option in a source\'s '
+                'settings. Some sites send phones a cut-down page with the real '
+                'content missing, so the source finds nothing. Turn this on and '
+                'it asks for the full desktop page instead — worth trying '
+                'whenever a source comes up empty, or opens but lists no '
+                'chapters. Sites behind a Cloudflare check are left alone, so '
+                'you won\'t have to solve the check again.'),
+            _ChangelogItem('RepoForge: Webtoons chapter lists now load once '
+                '"Request desktop site" is on, and browsing works whether the '
+                'site serves its phone or its desktop layout. The last release '
+                'only matched the phone one.'),
             _ChangelogItem('Your private data is now encrypted. Login tokens for '
                 'AniList/MyAnimeList/Kitsu are protected by the device keystore, '
                 'and the vault is properly encrypted with your password instead '
