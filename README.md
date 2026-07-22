@@ -10,12 +10,15 @@ and restore your library, and read behind Cloudflare‑protected sites.
 
 ## Download
 
-Grab the latest build from the [**Releases**](../../releases) page:
+From the [**Releases**](../../releases) page, or
+**[lillq.me/foxlations](https://lillq.me/foxlations)** — same builds either way:
 
 - `foxlations-<version>-arm64.apk` — Android
 - `foxlations-<version>.ipa` — iOS (unsigned, for sideloading)
 
-Each release's notes list what changed in that build.
+iOS users can add the page's **AltStore/SideStore source** instead and get
+updates automatically. The in-app **About → Check for Updates** reads the same
+manifest.
 
 ## Install — Android
 
@@ -56,25 +59,26 @@ Auto‑refreshes the app so it doesn't expire on you.
 - If your device/iOS is supported by **TrollStore**, that gives a permanent
   install with no 7‑day expiry.
 
-## Building from source
+## Privacy
 
-Requires the Flutter SDK and the Rust toolchain (for the `rhttp` dependency).
+Foxlations has no accounts and no analytics. It does not track you, and there is
+no server holding your library — everything stays on your device.
 
-```bash
-flutter pub get
-flutter build apk --release --target-platform android-arm64   # Android
-flutter build ios --release --no-codesign                     # iOS (then package Payload/ into an .ipa)
-```
+The app only makes network requests you ask it to:
 
-Releases are produced automatically by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) when a `v*` tag
-is pushed. To sign the Android build in CI, add these repository secrets
-(base64‑encode your keystore for the first one):
+- **Sources you add** — fetched directly from those sites.
+- **Update check** — when you open your library, the app asks
+  `lillq.me/foxlations` whether a newer build exists. Like any web request, that
+  server sees your IP address; nothing about you or your library is sent.
+- **Tracking** — only if you link AniList, MyAnimeList or Kitsu. Tokens are
+  encrypted on-device and sent only to that service.
+- **AI translation** — only if you enable it and supply your own API key. The
+  page image is sent to the provider you chose. Off by default; on-device text
+  recognition needs no network at all.
 
-`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`. Without them, CI builds a debug‑signed APK.
+## License
 
-## Status
+[Apache License 2.0](LICENSE) — see [`NOTICE`](NOTICE).
 
-Source availability / license: **to be decided.** Until a license is added, all
-rights are reserved.
+Foxlations is an independent project and is not affiliated with any content
+site. It ships no sources and hosts no content.

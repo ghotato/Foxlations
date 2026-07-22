@@ -63,3 +63,40 @@ android/key.properties
 # Dev-only Dart tools + generated dev config (not needed to build the app).
 /tool/
 /devtools_options.yaml
+
+# ── Local release automation ──
+# Run from the repo root on my machine only. These drive MY server (ZFS paths,
+# the build container's name, the Caddy web root), so they're useless to anyone
+# who clones this. CI never calls them — .github/workflows/ios-build.yml invokes
+# flutter directly — so keeping the folder out of the repo breaks nothing.
+# (.github/workflows/ MUST stay: Actions only runs workflows from the repo.)
+/scripts/
+
+# ── Unit tests ──
+# Run locally (`flutter test`), never in CI — no workflow invokes them, and
+# nothing in lib/ or pubspec.yaml references them, so the repo builds without.
+/test/
+
+# ── Secrets & credentials ──
+# Belt-and-braces: none of these are committed today, and the point is that a
+# stray one can never be added by accident. Signing keys are covered above.
+.env
+.env.*
+*.pem
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+
+# ── Editor / agent local config ──
+.vscode/
+.claude/
+
+# ── Stray app artifacts outside /builds/ ──
+*.apk
+*.aab
+*.ipa
+
+# ── Local planning docs — deliberately not published ──
+/ROADMAP.md
+/ClassicSource.json
