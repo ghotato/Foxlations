@@ -6,7 +6,7 @@ import 'mangayomi_js_generator.dart';
 ///
 /// The vendored [MangayomiJsGenerator] emits a Mangayomi-shaped index row; this
 /// adapter reconciles the field differences with what [MangaSource.fromJson]
-/// expects (see ROADMAP §5c):
+/// expects:
 ///   - `sourceCodeLanguage`: Mangayomi encodes JS as the int `1`; we use the
 ///     string `'js'` (passing the int would crash `fromJson`'s `as String?`).
 ///   - `framework`: absent from the Mangayomi row — carried from the ext map.

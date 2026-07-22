@@ -1,6 +1,5 @@
-v0.2.0 — security & encryption, RepoForge framework coverage, and a batch of
-library/UX work. The largest release so far, and the one hardened for going
-public.
+Security & encryption, RepoForge framework coverage, and a batch of library/UX
+work. The largest release so far, and the one hardened for going public.
 
 Security & privacy
 - Your login tokens for AniList / MyAnimeList / Kitsu are now encrypted with a
