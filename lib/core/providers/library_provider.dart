@@ -83,6 +83,18 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Full chapter objects (with read state) for an entry, for moving to vault.
+  List<LibraryChapter> fullChapters(String sourceId, String url) =>
+      _libraryService.getFullChapters(sourceId, url);
+
+  /// Adds an entry and its chapters, preserving read progress (for vault moves).
+  Future<void> addEntryWithChapters(
+      LibraryManga manga, List<LibraryChapter> chapters) async {
+    await _libraryService.addEntryWithChapters(manga, chapters);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
   Future<void> updateReadingProgress(
     String sourceId,
     String mangaUrl,

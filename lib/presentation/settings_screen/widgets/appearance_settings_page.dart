@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../../theme/app_theme.dart';
-import 'vault_settings_page.dart';
 
 // ── Theme Breed Data ─────────────────────────────────────────
 class ThemeBreed {
@@ -131,8 +130,6 @@ class AppearanceSettingsPage extends StatefulWidget {
 
 class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   String _selectedBreedId = 'red_fox';
-  int _digiFoxTapCount = 0;
-  DateTime _lastDigiFoxTap = DateTime(2000);
 
   @override
   void initState() {
@@ -201,42 +198,8 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 HapticFeedback.selectionClick();
                 setState(() => _selectedBreedId = breed.id);
                 context.read<ThemeProvider>().setBreed(breed.id);
-
-                // Secret: tap Digi Fox 9 times to open vault settings
-                if (breed.id == 'digi_fox') {
-                  final now = DateTime.now();
-                  if (now.difference(_lastDigiFoxTap).inMilliseconds < 600) {
-                    _digiFoxTapCount++;
-                  } else {
-                    _digiFoxTapCount = 1;
-                  }
-                  _lastDigiFoxTap = now;
-                  if (_digiFoxTapCount >= 7 && _digiFoxTapCount < 9) {
-                    final remaining = 9 - _digiFoxTapCount;
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context)
-                        ..clearSnackBars()
-                        ..showSnackBar(SnackBar(
-                          content: Text('$remaining more tap${remaining == 1 ? '' : 's'} to open vault settings'),
-                          duration: const Duration(milliseconds: 800),
-                          behavior: SnackBarBehavior.floating,
-                        ));
-                    }
-                  }
-                  if (_digiFoxTapCount >= 9) {
-                    _digiFoxTapCount = 0;
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).clearSnackBars();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const VaultSettingsPage()),
-                      );
-                    }
-                  }
-                } else {
-                  _digiFoxTapCount = 0;
-                }
+                // The vault's secret opener moved to the Foxlations logo on the
+                // About page (tap it 9×).
               },
             );
           }),

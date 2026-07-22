@@ -55,10 +55,42 @@ end
 # the CJK recognisers didn't link on the first attempt.
 $iOSVersion = '15.5'
 
+MLKIT_SCRIPTS = %w[Chinese Devanagari Japanese Korean]
+
 post_install do |installer|
   installer.pods_project.build_configurations.each do |config|
     config.build_settings['EXCLUDED_ARCHS[sdk=*]'] = 'armv7'
     config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = $iOSVersion
+  end
+
+  # google_mlkit_text_recognition gates its CJK recognisers behind
+  #   #if __has_include(<MLKitTextRecognitionJapanese/...>)
+  # but its podspec only depends on GoogleMLKit/TextRecognition (Latin).
+  # CocoaPods scopes search paths per pod target, so declaring the language
+  # pods on the Runner target — which CI confirmed installs and locks them
+  # correctly — still leaves them invisible to the PLUGIN's own compilation.
+  # The guards stay false, the switch falls through to Latin, and the linker
+  # drops the unreferenced frameworks (binary unchanged at ~80.5 MB).
+  # Put them on the plugin target's search paths so the headers resolve.
+  installer.pods_project.targets.each do |target|
+    next unless target.name == 'google_mlkit_text_recognition'
+
+    target.build_configurations.each do |config|
+      %w[FRAMEWORK_SEARCH_PATHS HEADER_SEARCH_PATHS].each do |key|
+        paths = config.build_settings[key] || ['$(inherited)']
+        paths = [paths] if paths.is_a?(String)
+        MLKIT_SCRIPTS.each do |s|
+          pod = "MLKitTextRecognition#{s}"
+          if key == 'FRAMEWORK_SEARCH_PATHS'
+            paths << %("${PODS_XCFRAMEWORKS_BUILD_DIR}/#{pod}")
+            paths << %("${PODS_ROOT}/#{pod}/Frameworks")
+          else
+            paths << %("${PODS_ROOT}/Headers/Public/#{pod}")
+          end
+        end
+        config.build_settings[key] = paths.uniq
+      end
+    end
   end
 
   installer.pods_project.targets.each do |target|

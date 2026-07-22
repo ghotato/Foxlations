@@ -427,25 +427,87 @@ class _SourceCreatorScreenState extends State<SourceCreatorScreen> {
             controller: _selectorCtls[key],
             autocorrect: false,
             style: GoogleFonts.robotoMono(fontSize: 12.5),
-            decoration: _inputDecoration('CSS selector', cs, label: label),
+            decoration: _inputDecoration('CSS selector', cs, label: label)
+                .copyWith(
+              // Tap to pick from cataloged selectors for this field.
+              suffixIcon: IconButton(
+                tooltip: 'Pick a known selector',
+                icon: Icon(Icons.expand_more_rounded, size: 20, color: cs.outline),
+                onPressed: () => _pickSelector(key, label, cs),
+              ),
+            ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         if (count != null) _matchBadge(count, cs),
-        IconButton(
-          tooltip: 'Test selector',
-          icon: Icon(Icons.play_arrow_rounded, color: cs.primary),
-          visualDensity: VisualDensity.compact,
+        // A clearer "test" affordance than a bare play icon.
+        TextButton.icon(
           onPressed: () => _testSelector(key),
+          icon: Icon(Icons.play_arrow_rounded, size: 18, color: cs.primary),
+          label: Text('Test',
+              style: GoogleFonts.manrope(
+                  fontSize: 12, fontWeight: FontWeight.w700, color: cs.primary)),
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 36),
+          ),
         ),
       ]),
     );
   }
 
+  /// Bottom-sheet list of cataloged selectors for [key], searchable, so a user
+  /// who doesn't know CSS can choose one that's known to work for this field.
+  Future<void> _pickSelector(String key, String label, ColorScheme cs) async {
+    final detected = _selectorCtls[key]!.text.trim();
+    final candidates = FrameworkDetectorService.candidateSelectorsForRole(
+      key,
+      detected: detected.isEmpty ? null : detected,
+    );
+    if (candidates.isEmpty) {
+      AppTheme.showSnackBar(context, 'No cataloged selectors for "$label"');
+      return;
+    }
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: cs.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppTheme.radiusLarge)),
+      ),
+      builder: (_) => _SelectorPickerSheet(
+        title: label,
+        candidates: candidates,
+        current: detected,
+        // Live match count so the user can see which selector actually hits.
+        countFor: (sel) => _fetchedHtml == null
+            ? null
+            : RepoForgeFetcher.countMatches(_fetchedHtml!, sel),
+      ),
+    );
+    if (picked != null) {
+      _selectorCtls[key]!.text = picked;
+      _testSelector(key);
+    }
+  }
+
   Widget _matchBadge(int count, ColorScheme cs) {
     final invalid = count < 0;
     final none = count == 0;
-    final color = invalid || none ? AppTheme.error : Colors.green;
+    // 0 matches is a warning (amber), not a hard error — the selector is valid,
+    // it just found nothing. Only a syntactically invalid selector is red.
+    final color = invalid
+        ? AppTheme.error
+        : none
+            ? AppTheme.warning
+            : Colors.green;
+    final text = invalid
+        ? 'invalid'
+        : none
+            ? 'no match'
+            : '$count';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -453,7 +515,7 @@ class _SourceCreatorScreenState extends State<SourceCreatorScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        invalid ? 'invalid' : '$count',
+        text,
         style: GoogleFonts.manrope(
             fontSize: 11.5, fontWeight: FontWeight.w700, color: color),
       ),
@@ -520,4 +582,140 @@ class _SourceCreatorScreenState extends State<SourceCreatorScreen> {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       );
+}
+
+/// Searchable list of cataloged CSS selectors for one field. Each row shows the
+/// selector and — when a page is loaded — how many elements it matches on it, so
+/// the user can pick one that actually hits without knowing CSS.
+class _SelectorPickerSheet extends StatefulWidget {
+  final String title;
+  final List<String> candidates;
+  final String current;
+  final int? Function(String selector) countFor;
+
+  const _SelectorPickerSheet({
+    required this.title,
+    required this.candidates,
+    required this.current,
+    required this.countFor,
+  });
+
+  @override
+  State<_SelectorPickerSheet> createState() => _SelectorPickerSheetState();
+}
+
+class _SelectorPickerSheetState extends State<_SelectorPickerSheet> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final filtered = _query.isEmpty
+        ? widget.candidates
+        : widget.candidates
+            .where((s) => s.toLowerCase().contains(_query.toLowerCase()))
+            .toList();
+
+    return Padding(
+      padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                  color: cs.outlineVariant,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Selector for ${widget.title}',
+                    style: GoogleFonts.manrope(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: cs.onSurface)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _search,
+                autofocus: false,
+                onChanged: (v) => setState(() => _query = v),
+                style: GoogleFonts.robotoMono(fontSize: 12.5),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Search selectors…',
+                  prefixIcon: Icon(Icons.search_rounded,
+                      size: 18, color: cs.outline),
+                  border: OutlineInputBorder(
+                      borderRadius:
+                          BorderRadius.circular(AppTheme.radiusMedium)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Flexible(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (_, i) {
+                  final sel = filtered[i];
+                  final count = widget.countFor(sel);
+                  final isCurrent = sel == widget.current;
+                  return ListTile(
+                    dense: true,
+                    title: Text(sel,
+                        style: GoogleFonts.robotoMono(
+                            fontSize: 12.5,
+                            color: cs.onSurface,
+                            fontWeight: isCurrent
+                                ? FontWeight.w700
+                                : FontWeight.w400)),
+                    leading: isCurrent
+                        ? Icon(Icons.check_rounded, size: 18, color: cs.primary)
+                        : const SizedBox(width: 18),
+                    trailing: count == null
+                        ? null
+                        : Text(
+                            count < 0
+                                ? 'invalid'
+                                : count == 0
+                                    ? 'no match'
+                                    : '$count',
+                            style: GoogleFonts.manrope(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: count > 0
+                                  ? Colors.green
+                                  : (count < 0
+                                      ? AppTheme.error
+                                      : AppTheme.warning),
+                            ),
+                          ),
+                    onTap: () => Navigator.pop(context, sel),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
 }

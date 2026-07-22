@@ -149,7 +149,9 @@ class _LocalSourcesTabWidgetState extends State<LocalSourcesTabWidget> {
       // Manga grid
       Expanded(
         child: filtered.isEmpty
-            ? Center(child: Text('No manga found',
+            // Local imports can be manga, comics or novels (.epub/.pdf), so
+            // stay neutral here.
+            ? Center(child: Text('Nothing imported yet',
                 style: GoogleFonts.manrope(fontSize: 14, color: cs.outline)))
             : GridView.builder(
                 padding: const EdgeInsets.all(12),

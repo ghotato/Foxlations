@@ -29,6 +29,15 @@ class DartExtensionService implements ExtensionService {
     RegistrerBridge.registerBridge(_interpreter!);
 
     final code = _sourceCode.replaceAll('Client(source)', 'Client()');
+    if (code.trim().isEmpty) {
+      // An empty program has no `main`, which d4rt reports as the confusing
+      // "Undefined variable: main". Say what actually happened.
+      _initError = 'This source has no code to run (it may be a Tachiyomi / '
+          'Mihon Kotlin extension, which is not supported). Reinstall it from a '
+          'Mangayomi-compatible repo.';
+      debugPrint('[D4rt] empty source for ${mSource.name}');
+      return;
+    }
     try {
       _interpreter!.execute(
         source: code,

@@ -37,6 +37,16 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Ship arm64 only. `flutter build --target-platform android-arm64`
+        // constrains Flutter's own engine libs, but plugin AARs (media_kit,
+        // ML Kit, rhttp, …) bundle every ABI, so the APK was carrying
+        // armeabi-v7a (30 MB) and x86_64 (44 MB) it never needs — 74 MB of dead
+        // weight. arm64 covers every device from ~2015 on (Play has required
+        // 64-bit since 2019); x86_64 is emulators only.
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     signingConfigs {

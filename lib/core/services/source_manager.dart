@@ -187,6 +187,21 @@ class SourceManager {
     }
 
     final resolvedUrl = _resolveSourceCodeUrl(source);
+
+    // No interpretable code AND no URL to fetch it from. This is what a
+    // Tachiyomi/Mihon (Kotlin) repo entry looks like — it ships a compiled
+    // `apk`, not a `sourceCodeUrl`. Foxlations runs JS/Dart extensions, not
+    // Kotlin, so there is nothing to execute. Previously such an entry
+    // installed with an empty body and then failed at runtime with the opaque
+    // "Undefined variable: main" (an empty program has no main). Refuse at
+    // install time with an honest message instead.
+    if (sourceCode.isEmpty && resolvedUrl.isEmpty) {
+      throw Exception(
+          'This source has no runnable code. It looks like a Tachiyomi / Mihon '
+          '(Kotlin) extension, which Foxlations can\'t run — it uses JavaScript '
+          'and Dart sources. Try a Mangayomi-compatible repo.');
+    }
+
     if (sourceCode.isEmpty && resolvedUrl.isNotEmpty) {
       try {
         if (resolvedUrl.startsWith('file://') ||
@@ -202,6 +217,14 @@ class SourceManager {
           }
           sourceCode = await file.readAsString();
         } else {
+          // Reject cleartext: the fetched bytes ARE executed as an extension,
+          // so an on-path attacker rewriting an http:// response would deliver
+          // arbitrary code. https only.
+          if (resolvedUrl.startsWith('http://')) {
+            throw Exception(
+                'Refusing to load a source over plain HTTP (use https): '
+                '$resolvedUrl');
+          }
           // HTTP download (cache-bust to avoid stale GitHub CDN)
           final bust = DateTime.now().millisecondsSinceEpoch;
           final sep = resolvedUrl.contains('?') ? '&' : '?';

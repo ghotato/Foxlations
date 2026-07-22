@@ -177,19 +177,11 @@ class FrameworkDetectorService {
       contentType: 'Anime',
       version: '2.x',
     ),
-    _FrameworkSig(
-      name: 'AniList API',
-      patterns: [
-        'anilist',
-        'graphql',
-        '"data":{"Page"',
-        '"mediaList"',
-        'AniList',
-      ],
-      confidence: 97,
-      contentType: 'Anime',
-      version: 'GraphQL',
-    ),
+    // NOTE: there is deliberately no "AniList API" signature. AniList is a
+    // tracking/metadata service (already integrated as a tracker) with no
+    // readable chapter content, and the generator has no path to build a source
+    // from it — so detecting it produced nothing usable. Its loose 'anilist'
+    // pattern also misclassified any manga site that merely LINKED to AniList.
     _FrameworkSig(
       name: 'REST API',
       patterns: [
@@ -680,13 +672,107 @@ class FrameworkDetectorService {
       contentType: 'Anime',
       version: 'Video',
     ),
+
+    // ── lib-multisrc expansion (build 25) ─────────────────────────────────
+    // Detection signatures for the full keiyoushi/yuzono/NovelSourcery
+    // multi-source theme set. Markers are observable public-site facts drawn
+    // from each framework's base class as reference (not copied code). Patterns
+    // are the most distinctive 3-6 per framework; confidence reflects marker
+    // uniqueness (API/header endpoints highest, generic WP themes lowest).
+
+    // Manga themes (keiyoushi lib-multisrc)
+    _FrameworkSig(name: 'FoOlSlide', patterns: ['div.group', '/directory/', 'div.meta_r', 'var pages = ['], confidence: 88, contentType: 'Manga', version: 'FoolSlide'),
+    _FrameworkSig(name: 'GigaViewer', patterns: ['data-giga_series', 'pagination_readable_products', 'episode-json', 'series-header-title'], confidence: 95, contentType: 'Manga', version: 'GigaViewer'),
+    _FrameworkSig(name: 'LibGroup API', patterns: ['api.cdnlibs.org', '/api/constants?fields', '/api/latest-updates', 'site_id[]='], confidence: 96, contentType: 'Manga', version: 'API'),
+    _FrameworkSig(name: 'GroupLe', patterns: ['rm_h.readerInit', 'cr-hero-names__main', 'user_hash', 'sortType=updated'], confidence: 92, contentType: 'Manga', version: 'GroupLe'),
+    _FrameworkSig(name: 'MCCMS', patterns: ['/api/data/comic?', '/api/data/chapter?mid=', 'order=addtime'], confidence: 93, contentType: 'Manga', version: 'MCCMS'),
+    _FrameworkSig(name: 'SinMH', patterns: ['chapterImages = [', 'chapterPath =', 'book-title', 'contList'], confidence: 90, contentType: 'Manga', version: 'SinMH'),
+    _FrameworkSig(name: 'MangaHub API', patterns: ['mghcdn.com', 'x-mhub-access', 'mhub_access', 'imgx.mghcdn.com'], confidence: 96, contentType: 'Manga', version: 'GraphQL'),
+    _FrameworkSig(name: 'Iken API', patterns: ['/api/query', '/api/post?postSlug=', '/api/chapters?postId=', '/series/'], confidence: 94, contentType: 'Manga', version: 'API'),
+    _FrameworkSig(name: 'Liliana', patterns: ['/ajax/image/list/chap/', 'const CHAPTER_ID', 'div.separator', 'ranking/week'], confidence: 91, contentType: 'Manga', version: 'Liliana'),
+    _FrameworkSig(name: 'UzayManga', patterns: ['__data.json', 'x-sveltekit-invalidated', 'sort=popular'], confidence: 93, contentType: 'Manga', version: 'SvelteKit'),
+    _FrameworkSig(name: 'FuzzyDoodle', patterns: ['card-real', 'chapter-container', 'chapters-list', 'name=type'], confidence: 90, contentType: 'Manga', version: 'FuzzyDoodle'),
+    _FrameworkSig(name: 'MangaReader', patterns: ['ani_detail', 'manga_list-sbs', 'en-chapters', 'mode=vertical'], confidence: 91, contentType: 'Manga', version: 'MangaReader'),
+    _FrameworkSig(name: 'MangaWorld', patterns: ['noidungm', 'comics-grid', 'chapters-wrapper', 'page-image'], confidence: 91, contentType: 'Manga', version: 'MangaWorld'),
+    _FrameworkSig(name: 'MangaCatalog', patterns: ['bg-bg-secondary', 'col-span-4'], confidence: 84, contentType: 'Manga', version: 'MangaCatalog'),
+    _FrameworkSig(name: 'PizzaReader', patterns: ['/api/comics', '/api/search/'], confidence: 90, contentType: 'Manga', version: 'PizzaReader'),
+    _FrameworkSig(name: 'MangAdventure', patterns: ['/api/v2/series', '/api/v2/chapters/', 'sort=-latest_upload'], confidence: 93, contentType: 'Manga', version: 'API v2'),
+    _FrameworkSig(name: 'MonochromeCMS', patterns: ['/api/media/', '/api/manga?limit=', '/chapters/'], confidence: 91, contentType: 'Manga', version: 'MonochromeCMS'),
+    _FrameworkSig(name: 'ManhwaZ', patterns: ['slide-top', 'img-item', 'info-item', 'item-summary'], confidence: 82, contentType: 'Manhwa', version: 'ManhwaZ'),
+    _FrameworkSig(name: 'ZManga', patterns: ['flexbox2-item', 'flexch-infoz', 'series-chapterlist', 'reader-area'], confidence: 90, contentType: 'Manga', version: 'ZManga'),
+    _FrameworkSig(name: 'Senkuro', patterns: ['api.senkuro', 'fetchTachiyomiManga', 'searchTachiyomiManga'], confidence: 94, contentType: 'Manga', version: 'GraphQL'),
+    _FrameworkSig(name: 'Multi-Chan', patterns: ['content_row', 'table_cha', 'fullimg', 'do=search&subaction=search'], confidence: 89, contentType: 'Manga', version: 'Chan'),
+    _FrameworkSig(name: 'Comici Viewer', patterns: ['series-list-item-link', '#scramble=', 'series-list-item-img'], confidence: 92, contentType: 'Manga', version: 'Comici'),
+    _FrameworkSig(name: 'EZManhwa API', patterns: ['perPage=20&sort=popular', 'pref_show_locked_chapters', '/series/search?q='], confidence: 92, contentType: 'Manhwa', version: 'API'),
+    _FrameworkSig(name: 'GoDa', patterns: ['chapcontent', '/manga/get?mid=', '/chapter/getcontent?m=', 'mangachapters'], confidence: 91, contentType: 'Manga', version: 'GoDa'),
+    _FrameworkSig(name: 'GreenShit API', patterns: ['/obras/ranking', '/obras/atualizacoes', '/capitulos/'], confidence: 92, contentType: 'Manga', version: 'API'),
+    _FrameworkSig(name: 'Hiper (tRPC)', patterns: ['/api/trpc/', 'series.bySlugWithGenres', 'reader.chapterPages'], confidence: 94, contentType: 'Manga', version: 'tRPC'),
+    _FrameworkSig(name: 'InitManga', patterns: ['/wp-json/initlise/v1/search', 'InitMangaEncryptedChapter', 'manga-item-grid'], confidence: 93, contentType: 'Manga', version: 'InitManga'),
+    _FrameworkSig(name: 'MangaTaro', patterns: ['/auth/manga-chapters', '/wp-json/manga/v1/load', '/auth/chapter-content'], confidence: 93, contentType: 'Manga', version: 'MangaTaro'),
+    _FrameworkSig(name: 'MangaWork', patterns: ['imgch', '/manga_auto_capitulos/', 'chapter_list_container'], confidence: 90, contentType: 'Manga', version: 'MangaWork'),
+    _FrameworkSig(name: 'MangoTheme API', patterns: ['X-MangoTheme-Stored-Slug', '/api/obras/top10/views', '/api/capitulos/recentes'], confidence: 94, contentType: 'Manga', version: 'API'),
+    _FrameworkSig(name: 'Masonry', patterns: ['list-gallery', 'mpage/', 'pagination-a'], confidence: 87, contentType: 'Comic', version: 'Masonry'),
+    _FrameworkSig(name: 'MoonlightTL', patterns: ['/api/showProject/', '/api/topSerie', '/api/lastUpdates'], confidence: 92, contentType: 'Manga', version: 'MoonlightTL'),
+    _FrameworkSig(name: 'NatsuId', patterns: ['action=advanced_search', 'search_nonce', 'action=chapter_list'], confidence: 91, contentType: 'Manhwa', version: 'NatsuId'),
+    _FrameworkSig(name: 'OceanWP', patterns: ['blog-entry', 'blog-entry-title', 'tagcloud'], confidence: 70, contentType: 'Manga', version: 'WordPress'),
+    _FrameworkSig(name: 'Pam (Inertia)', patterns: ['X-Inertia', 'data-page', '/api/v1/search/series'], confidence: 92, contentType: 'Manga', version: 'Inertia'),
+    _FrameworkSig(name: 'ScanReader', patterns: ['secure-chapters-container', '/chapitre/', 'manga-card'], confidence: 90, contentType: 'Manga', version: 'ScanReader'),
+    _FrameworkSig(name: 'SpicyTheme API', patterns: ['/filtrar?orderBy=ID_POPULAR', '/home/buscar?query='], confidence: 92, contentType: 'Manga', version: 'API'),
+    _FrameworkSig(name: 'StalkerCMS', patterns: ['chapter-image-canvas', 'load-more-releases', 'comic-card-link'], confidence: 91, contentType: 'Manga', version: 'StalkerCMS'),
+    _FrameworkSig(name: 'VerComics', patterns: ['popimg', 'wp-pagenavi', 'div#lector', 'tax_box'], confidence: 88, contentType: 'Comic', version: 'VerComics'),
+    _FrameworkSig(name: 'BakkinReaderX', patterns: ['main.php', '#m=', '#v=', '#c='], confidence: 88, contentType: 'Manga', version: 'Bakkin'),
+
+    // Anime themes (yuzono lib-multisrc)
+    _FrameworkSig(name: 'DooPlay', patterns: ['w_item_a', 'ul.episodios', 'numerando', 'doo_player_ajax'], confidence: 91, contentType: 'Anime', version: 'DooPlay'),
+    _FrameworkSig(name: 'AnimeStream', patterns: ['eplister', 'listupd', 'epl-num', 'data-em'], confidence: 91, contentType: 'Anime', version: 'AnimeStream'),
+    _FrameworkSig(name: 'DataLifeEngine', patterns: ['dle-content', 'do=search', 'div.mov', 'dle_root'], confidence: 88, contentType: 'Anime', version: 'DLE'),
+    _FrameworkSig(name: 'DopeFlix', patterns: ['flw-item', 'detail_page-infor', '/ajax/episode/sources/', 'eps-item'], confidence: 92, contentType: 'Anime', version: 'FlixHQ'),
+    _FrameworkSig(name: 'WcoTheme', patterns: ['sidebar_cat', 'wcostream', 'watchanimesub', 'recent-release'], confidence: 91, contentType: 'Anime', version: 'WcoTheme'),
+    _FrameworkSig(name: 'AnimeKai', patterns: ['ani_id=', 'aitem', '/ajax/links/list?token=', 'enc-dec.app'], confidence: 92, contentType: 'Anime', version: 'AnimeKai'),
+    _FrameworkSig(name: 'Anikoto', patterns: ['flexserieslist', 'vrf=', '/ajax/episode/list/', 'ani.items'], confidence: 91, contentType: 'Anime', version: 'Anikoto'),
+    _FrameworkSig(name: 'YFlix', patterns: ['enc-movies-flix', 'film-section', '/ajax/links/view?id='], confidence: 92, contentType: 'Anime', version: 'YFlix'),
+    _FrameworkSig(name: 'PelisPlus', patterns: ['pelisplus', '/drive/v1/shares/'], confidence: 78, contentType: 'Anime', version: 'PelisPlus'),
+
+    // Novel themes (NovelSourcery + lnreader-plugins, reference only)
+    _FrameworkSig(name: 'LightNovelWP', patterns: ['epcontent', 'ts-post-image', 'sertogenre', 'epl-price'], confidence: 91, contentType: 'Novel', version: 'LightNovelWP'),
+    _FrameworkSig(name: 'ReadWN', patterns: ['novel-item', '-newstime-', '-lastdotime-', 'chapter-content'], confidence: 91, contentType: 'Novel', version: 'ReadWN'),
+    _FrameworkSig(name: 'ReadNovelFull', patterns: ['chr-content', 'list-novel', 'novel-title', 'og:novel:status'], confidence: 91, contentType: 'Novel', version: 'NovelFull'),
+    _FrameworkSig(name: 'LightNovelWorld', patterns: ['chapter-container', 'novel-item', 'lnsearchlive', 'PagedList-skipToNext'], confidence: 92, contentType: 'Novel', version: 'LNW'),
+    _FrameworkSig(name: 'Fictioneer', patterns: ['story__identity-title', 'chapter-group__list-item', 'story__thumbnail'], confidence: 92, contentType: 'Novel', version: 'Fictioneer'),
+    _FrameworkSig(name: 'HotNovelPub API', patterns: ['/server/getContent?slug=', 'books/hot/', 'key_search'], confidence: 92, contentType: 'Novel', version: 'API'),
+    _FrameworkSig(name: 'MTLNovel', patterns: ['div.par', 'ch-link', 'amp-img', 'chapter-list'], confidence: 89, contentType: 'Novel', version: 'MTLNovel'),
+    _FrameworkSig(name: 'Ranobes', patterns: ['arrticle', 'short-cont', 'category grey ellipses'], confidence: 90, contentType: 'Novel', version: 'Ranobes'),
+    _FrameworkSig(name: 'Rulate API', patterns: ['/api3/', 'bookChapters?book_id=', 'ready_new'], confidence: 93, contentType: 'Novel', version: 'API'),
+    _FrameworkSig(name: 'NovelCool API', patterns: ['api.novelcool.com', '/chapter/info/', 'lc_type=novel'], confidence: 93, contentType: 'Novel', version: 'API'),
+    _FrameworkSig(name: 'iFreedom', patterns: ['one-book-home', 'item-book-slide', 'chapter-setting'], confidence: 89, contentType: 'Novel', version: 'iFreedom'),
   ];
 
   // Near-unique, high-signal tokens (brands, domains, JS globals). A single
   // one of these is enough to accept a framework even at match-score 1.
   static const Set<String> _strongTokens = {
     'wp-manga', 'madara', 'mangathemesia', 'themesia', 'mangadex.org',
-    'anilist', 'ytinitialplayerresponse', 'ytinitialdata', 'vm.pages',
+    // 'anilist' intentionally absent: it's a link/ad reference on countless
+    // manga sites, not proof the site is anything. The AniList API signature
+    // was removed entirely (AniList has no readable content to generate from).
+    'ytinitialplayerresponse', 'ytinitialdata', 'vm.pages',
+    // ── lib-multisrc expansion: near-unique single-match markers ──
+    // Manga
+    'api.cdnlibs.org', 'rm_h.readerinit', '/api/data/comic?', 'mghcdn.com',
+    'x-mhub-access', 'data-giga_series', 'pagination_readable_products',
+    '/ajax/image/list/chap/', '__data.json', 'x-sveltekit-invalidated',
+    '/api/trpc/', 'x-mangotheme-stored-slug', '/wp-json/initlise/v1/search',
+    'initmangaencryptedchapter', '/auth/manga-chapters', '/manga_auto_capitulos/',
+    'api.senkuro', '/api/v2/series', '/api/showproject/', 'flexch-infoz',
+    'flexbox2-item', 'secure-chapters-container', 'chapter-image-canvas',
+    'load-more-releases', 'series-list-item-link', '/manga/get?mid=',
+    '/obras/ranking', '/filtrar?orderby=id_popular', 'card-real',
+    // Anime
+    'w_item_a', 'eplister', 'doo_player_ajax', 'enc-movies-flix',
+    'flexserieslist', 'ani_id=', 'wcostream', 'watchanimesub',
+    // Novel
+    'story__identity-title', 'chapter-group__list-item', 'og:novel:status',
+    'lnsearchlive', 'api.novelcool.com', '/api3/', '/server/getcontent?slug=',
+    '-newstime-', '-lastdotime-', 'one-book-home', 'chr-content',
     'komga', 'kavita', 'guya.moe', 'cubari', 'webtoons.com', 'tapas.io',
     'gogoanime', '9anime', 'manganato', 'mangakakalot', 'chapmanganato',
     'mangareadercms', 'xvideos', 'xhamster', 'clipbucket', 'phpmotion',
@@ -855,11 +941,26 @@ class FrameworkDetectorService {
       if (confidence < 88) confidence = 88;
     }
 
-    final endpoints = _buildEndpoints(
-      framework == 'Custom' ? null : _sigByName(framework),
-      normalizedUrl,
-      lowerHtml,
-    );
+    // Fresh growable copy so the catalog-endpoint merge below can't hit a
+    // fixed-length/const list from _buildEndpoints.
+    final endpoints = [
+      ..._buildEndpoints(
+        framework == 'Custom' ? null : _sigByName(framework),
+        normalizedUrl,
+        lowerHtml,
+      )
+    ];
+    // Merge the framework's catalog endpoints (API/GraphQL routes) so an
+    // API-based source generates against the right paths.
+    final catalogEndpoints = _frameworkEndpoints[framework];
+    if (catalogEndpoints != null) {
+      endpoints.addAll(catalogEndpoints.map((e) => {
+            'name': e['name'] ?? '',
+            'path': e['path'] ?? '',
+            'status': 'catalog',
+            'type': 'api',
+          }));
+    }
 
     // Detect language from html lang attribute
     final langMatch = RegExp(
@@ -884,6 +985,12 @@ class FrameworkDetectorService {
       } else {
         extractedSelectors = SelectorExtractor.extract(html);
       }
+    } else {
+      // Known framework: emit its catalog selectors so the Create Source
+      // screen auto-fills each slot and the generator uses real selectors
+      // rather than generic defaults.
+      final known = _frameworkSelectors[framework];
+      if (known != null) extractedSelectors = Map<String, String>.from(known);
     }
 
     // Best-effort deep scan for brand-new custom sites: fetch a sample detail +
@@ -1351,6 +1458,157 @@ class FrameworkDetectorService {
     return result;
   }
 
+  // ─── lib-multisrc listing selectors (build 25) ────────────────────────────
+  // Per-framework listing/detail/chapter/page CSS selectors, from each theme's
+  // base class as reference. Emitted by detect() for KNOWN frameworks so the
+  // generator fills real selectors instead of generic defaults. Also the source
+  // of truth for the Scraping Studio's per-role selector picker. Roles:
+  // item, title, cover, chapters, page_images, detailTitle, nextPage, episodes.
+  // API/GraphQL frameworks carry no CSS selectors (they use _frameworkEndpoints).
+  static const Map<String, Map<String, String>> _frameworkSelectors = {
+    // Manga — HTML themes
+    'FoOlSlide': {'item': 'div.group', 'title': 'a[title]', 'cover': 'img', 'chapters': 'div.group div.element, div.list div.element', 'detailTitle': 'h1.title'},
+    'GigaViewer': {'item': 'ul.series-list li a', 'title': 'h2.series-list-title', 'cover': 'div.series-list-thumb img', 'detailTitle': 'h1.series-header-title'},
+    'GroupLe': {'item': 'div.tile', 'title': 'h3 > a', 'cover': 'img.lazy', 'chapters': 'a.chapter-link', 'detailTitle': '.cr-hero-names__main'},
+    'SinMH': {'item': '#contList > li, li.list-comic', 'title': 'p > a, h3 > a', 'cover': 'img', 'chapters': '.chapter-body li > a', 'detailTitle': '.book-title > h1'},
+    'Liliana': {'item': 'div#main div.grid > div', 'title': '.text-center a', 'cover': 'img', 'chapters': 'ul > li.chapter', 'page_images': 'div.separator'},
+    'FuzzyDoodle': {'item': 'div#card-real', 'title': 'h2.text-sm', 'cover': 'img', 'chapters': 'div#chapters-list > a[href]', 'page_images': 'div#chapter-container > img'},
+    'MangaReader': {'item': '.manga_list-sbs .manga-poster', 'title': '.manga-name', 'chapters': '#en-chapters > li.chapter-item', 'detailTitle': '.manga-name', 'page_images': '.container-reader-chapter > div > img'},
+    'MangaWorld': {'item': 'div.comics-grid .entry', 'title': 'a', 'cover': 'a.thumb img', 'chapters': '.chapters-wrapper .chapter', 'page_images': 'div#page img.page-image', 'detailTitle': 'h1'},
+    'MangaCatalog': {'item': 'div.bg-bg-secondary > div.px-6 > div.flex-col', 'title': 'div.container > h1', 'cover': 'div.flex > img', 'page_images': 'img[data-src]'},
+    'ManhwaZ': {'item': '#slide-top > .item, .page-item-detail', 'title': '.info-item a, .item-summary a', 'cover': '.img-item img', 'chapters': 'li.wp-manga-chapter', 'page_images': 'div.page-break img', 'detailTitle': 'div.post-title h1'},
+    'ZManga': {'item': 'div.flexbox2-item', 'title': 'div.flexbox2-title > span', 'cover': 'img', 'chapters': 'ul.series-chapterlist div.flexch-infoz a', 'page_images': 'div.reader-area img'},
+    'Multi-Chan': {'item': 'div.content_row', 'cover': 'img#cover', 'chapters': 'table.table_cha tr:gt(1)', 'detailTitle': 'h1'},
+    'Comici Viewer': {'item': 'div.series-list-item', 'title': 'div.series-list-item-h span', 'cover': 'img.series-list-item-img'},
+    'GoDa': {'item': '.container > .cardlist .pb-2 a', 'title': 'h3', 'cover': 'img', 'chapters': '.chapteritem', 'page_images': '#chapcontent > div > img'},
+    'InitManga': {'item': 'div.manga-item-grid > div.uk-panel', 'title': 'h3 a', 'cover': 'img', 'chapters': 'div.chapter-item', 'page_images': 'div#chapter-content img[src]'},
+    'MangaWork': {'item': "div.w-full.h-full", 'title': 'h1', 'cover': 'img', 'chapters': '#chapter_list li', 'page_images': 'div.reader-area img#imagech'},
+    'Masonry': {'item': '.list-gallery:not(.static) figure', 'title': 'a', 'cover': 'img', 'page_images': '.list-gallery a'},
+    'NatsuId': {'item': 'div > a[href*=/manga/]', 'chapters': 'div a:has(time)', 'page_images': 'main .relative section > img'},
+    'OceanWP': {'item': 'article.blog-entry', 'title': 'h2.blog-entry-title a', 'cover': 'div.thumbnail img', 'page_images': 'div.entry-content img', 'detailTitle': '.entry-title'},
+    'ScanReader': {'item': 'div.manga-card', 'title': 'h1.manga-title', 'cover': "meta[property='og:image']", 'chapters': '#secure-chapters-container', 'detailTitle': 'h1.manga-title'},
+    'StalkerCMS': {'item': '.comics-grid a.comic-card-link', 'title': 'h1', 'cover': '.sidebar-cover-image img', 'chapters': '.chapter-item-list a.chapter-link', 'page_images': '.chapter-image-canvas'},
+    'VerComics': {'item': 'header:has(h1) ~ * .entry', 'cover': 'img:not(noscript img)', 'page_images': 'div.wp-content div#lector > img'},
+    'MangaTaro': {'item': '.manga-card', 'title': 'h1', 'cover': 'img', 'detailTitle': 'h1'},
+    'MoonlightTL': {'page_images': 'main.contenedor.read img, main > img'},
+    // Anime — HTML/AJAX themes
+    'DooPlay': {'item': 'article.w_item_a > a', 'title': 'img.alt', 'cover': 'div.poster img', 'episodes': 'ul.episodios > li'},
+    'AnimeStream': {'item': 'div.listupd article a.tip', 'title': 'h1.entry-title', 'cover': 'div.thumb > img, div.limage > img', 'episodes': 'div.eplister > ul > li > a'},
+    'DataLifeEngine': {'item': 'div#dle-content > div.mov', 'title': 'a', 'cover': 'img'},
+    'DopeFlix': {'item': 'div.flw-item', 'cover': 'div.film-poster img', 'episodes': '.eps-item'},
+    'WcoTheme': {'item': 'div#sidebar_right2 ul.items > li', 'title': 'div.video-title a', 'cover': 'div#sidebar_cat img', 'episodes': 'div#episodeList a.dark-episode-item'},
+    'AnimeKai': {'item': '.aitem-col a.aitem', 'episodes': 'div.eplist a'},
+    'Anikoto': {'item': 'div.ani.items > div.item', 'title': 'a.name', 'cover': 'div.poster img', 'episodes': 'div.episodes ul > li > a'},
+    'YFlix': {'item': 'div.film-section div.item', 'title': 'a.title', 'cover': 'img[data-src]', 'episodes': 'ul.episodes[data-season]'},
+    // Novel — HTML themes (page_images = chapter TEXT content selector for novels)
+    'LightNovelWP': {'item': 'article', 'title': '.entry-title', 'cover': 'img.ts-post-image', 'chapters': '.eplister li', 'page_images': '.epcontent.entry-content', 'detailTitle': '.entry-title'},
+    'ReadWN': {'item': 'li.novel-item', 'title': 'h4', 'cover': '.novel-cover img', 'chapters': '.chapter-list li', 'page_images': '.chapter-content', 'detailTitle': 'h1.novel-title'},
+    'ReadNovelFull': {'item': 'div.list-novel div.row', 'title': 'h3.novel-title a', 'cover': 'div.pic img', 'chapters': '#list-chapter li a', 'page_images': 'div#chr-content', 'detailTitle': 'h3.title'},
+    'LightNovelWorld': {'item': '.novel-item', 'title': '.novel-title > a', 'cover': 'img[data-src]', 'chapters': '.chapter-list li', 'page_images': '#chapter-container', 'detailTitle': 'h1.novel-title'},
+    'Fictioneer': {'item': '#list-of-stories > li > div > div', 'title': 'h3 > a', 'cover': 'a.cell-img', 'chapters': 'li.chapter-group__list-item', 'page_images': 'section#chapter-content > div', 'detailTitle': 'h1.story__identity-title'},
+    'MTLNovel': {'item': 'div.box.wide', 'title': 'a.list-title', 'cover': 'amp-img', 'chapters': 'div.ch-list a.ch-link', 'page_images': 'div.par', 'detailTitle': 'h1.entry-title'},
+    'Ranobes': {'item': '.short-cont', 'title': 'h2.title > a', 'page_images': 'div.text#arrticle'},
+    'iFreedom': {'item': '.one-book-home, .item-book-slide', 'cover': 'img', 'page_images': 'div.chapter-content'},
+  };
+
+  // API/GraphQL/tRPC frameworks: base-relative endpoint paths, emitted so the
+  // generator's API body targets the right routes. {query}/{page}/{slug}/{id}
+  // are filled at runtime by the generated source.
+  static const Map<String, List<Map<String, String>>> _frameworkEndpoints = {
+    'LibGroup API': [
+      {'name': 'popular', 'path': '/api/manga?site_id[]=&page={page}'},
+      {'name': 'latest', 'path': '/api/latest-updates?page={page}'},
+      {'name': 'search', 'path': '/api/manga?page={page}&q={query}'},
+    ],
+    'Iken API': [
+      {'name': 'popular', 'path': '/api/query'},
+      {'name': 'search', 'path': '/api/query'},
+      {'name': 'chapters', 'path': '/api/chapters?postId={id}'},
+    ],
+    'MangAdventure': [
+      {'name': 'latest', 'path': '/api/v2/series?page={page}&sort=-latest_upload'},
+      {'name': 'popular', 'path': '/api/v2/series?page={page}&sort=-views'},
+      {'name': 'search', 'path': '/api/v2/series?title={query}'},
+    ],
+    'MonochromeCMS': [
+      {'name': 'search', 'path': '/api/manga?limit=10&offset=0&title={query}'},
+    ],
+    'PizzaReader': [
+      {'name': 'popular', 'path': '/api/comics'},
+      {'name': 'search', 'path': '/api/search/{query}'},
+    ],
+    'MCCMS': [
+      {'name': 'popular', 'path': '/api/data/comic?page={page}&order=hits'},
+      {'name': 'latest', 'path': '/api/data/comic?page={page}&order=addtime'},
+      {'name': 'search', 'path': '/api/data/comic?key={query}'},
+    ],
+    'GreenShit API': [
+      {'name': 'popular', 'path': '/obras/ranking'},
+      {'name': 'latest', 'path': '/obras/atualizacoes'},
+      {'name': 'search', 'path': '/obras/buscar'},
+    ],
+    'MangoTheme API': [
+      {'name': 'popular', 'path': '/api/obras/top10/views?periodo=total'},
+      {'name': 'latest', 'path': '/api/capitulos/recentes?pagina={page}'},
+      {'name': 'search', 'path': '/api/obras?pagina={page}&busca={query}'},
+    ],
+    'SpicyTheme API': [
+      {'name': 'popular', 'path': '/filtrar?page={page}&orderBy=ID_POPULAR'},
+      {'name': 'latest', 'path': '/filtrar?page={page}&orderBy=ID_LATEST'},
+      {'name': 'search', 'path': '/home/buscar?query={query}'},
+    ],
+    'EZManhwa API': [
+      {'name': 'popular', 'path': '/series?page={page}&perPage=20&sort=popular'},
+      {'name': 'latest', 'path': '/series?page={page}&perPage=20&sort=latest'},
+      {'name': 'search', 'path': '/series/search?q={query}'},
+    ],
+    'HotNovelPub API': [
+      {'name': 'popular', 'path': '/books/hot/?page={page}&limit=20'},
+      {'name': 'latest', 'path': '/books/new/'},
+      {'name': 'search', 'path': '/search'},
+    ],
+    'Rulate API': [
+      {'name': 'search', 'path': '/api3/searchBooks?limit=40&page={page}&t={query}'},
+      {'name': 'chapters', 'path': '/api3/bookChapters?book_id={id}'},
+    ],
+    'NovelCool API': [
+      {'name': 'popular', 'path': '/elite/hot'},
+      {'name': 'latest', 'path': '/elite/latest'},
+      {'name': 'search', 'path': '/book/search/'},
+    ],
+    'UzayManga': [
+      {'name': 'popular', 'path': '/manga/__data.json?sort=popular&page={page}'},
+      {'name': 'latest', 'path': '/manga/__data.json?sort=new&page={page}'},
+      {'name': 'search', 'path': '/manga/__data.json?search={query}&page={page}'},
+    ],
+  };
+
+  /// All known selectors cataloged for a role (item/title/cover/chapters/
+  /// page_images/detailTitle/nextPage/episodes), aggregated across every
+  /// framework and de-duplicated. Powers the Scraping Studio's per-field
+  /// selector picker, so a user who doesn't know CSS can choose a known-good
+  /// selector instead of typing one. [detected] (the framework's own selector
+  /// for this role, if any) is surfaced first.
+  static List<String> candidateSelectorsForRole(String role, {String? detected}) {
+    final seen = <String>{};
+    final out = <String>[];
+    void add(String? s) {
+      if (s == null) return;
+      // A framework selector may be a comma list of alternatives — offer each.
+      for (final part in s.split(',')) {
+        final t = part.trim();
+        if (t.isEmpty || !seen.add(t)) continue;
+        out.add(t);
+      }
+    }
+
+    add(detected);
+    for (final m in _frameworkSelectors.values) {
+      add(m[role]);
+    }
+    return out;
+  }
+
   // ─── Media selector builder ───────────────────────────────────────────────
 
   static Map<String, Map<String, String>> _buildMediaSelectors(
@@ -1485,19 +1743,6 @@ class FrameworkDetectorService {
             'iframe': 'iframe#video-content',
             'serverList': 'ul.episodes',
             'sourceElem': 'video source',
-          },
-        };
-      case 'AniList API':
-        return {
-          'imageSelectors': {
-            'cover': 'coverImage { large }',
-            'chapterImages': '',
-            'lazyAttr': 'src',
-          },
-          'videoSelectors': {
-            'iframe': 'iframe#iframe-embed',
-            'serverList': '',
-            'sourceElem': '',
           },
         };
       case 'KVS (Kernel Video Sharing)':
@@ -1829,27 +2074,6 @@ class FrameworkDetectorService {
           {
             'name': 'Search',
             'path': '/manga?title={query}',
-            'status': 'found',
-            'type': 'api',
-          },
-        ];
-      case 'AniList API':
-        return [
-          {
-            'name': 'GraphQL Endpoint',
-            'path': '/graphql',
-            'status': 'found',
-            'type': 'api',
-          },
-          {
-            'name': 'Media Search',
-            'path': '/graphql (query: Media)',
-            'status': 'found',
-            'type': 'api',
-          },
-          {
-            'name': 'Media List',
-            'path': '/graphql (query: MediaList)',
             'status': 'found',
             'type': 'api',
           },

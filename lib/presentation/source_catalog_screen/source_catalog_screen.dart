@@ -226,7 +226,14 @@ class _CatalogBodyState extends State<_CatalogBody> {
     }
 
     if (catalog.currentManga.isEmpty) {
-      return const Center(child: Text('No manga found'));
+      // Match the wording to the source's content type — an anime or novel
+      // source shouldn't say "no manga".
+      final noun = switch (catalog.source.itemType) {
+        'anime' => 'anime',
+        'novel' => 'light novels',
+        _ => 'manga',
+      };
+      return Center(child: Text('No $noun found'));
     }
 
     final grid = RefreshIndicator(

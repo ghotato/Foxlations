@@ -55,17 +55,38 @@ class CookieStore {
         '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   }
 
+  /// Multi-label public suffixes where the "last two labels" are NOT a single
+  /// owner. Attaching a cookie stored for one `*.github.io` tenant to a request
+  /// for a sibling tenant would leak it across origins. Not exhaustive (a full
+  /// Public Suffix List is huge), but covers the suffixes a source is realistic
+  /// to touch. When the registrable domain lands on one of these, we do NOT
+  /// widen to it.
+  static const _multiLabelSuffixes = {
+    'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'co.jp', 'or.jp', 'ne.jp',
+    'co.kr', 'or.kr', 'com.br', 'com.au', 'com.cn', 'co.in', 'co.nz',
+    'github.io', 'blogspot.com', 'wordpress.com', 'pages.dev', 'workers.dev',
+    'netlify.app', 'vercel.app', 'web.app', 'firebaseapp.com',
+  };
+
   /// Get stored cookies for a domain as a Cookie header string.
-  /// Also checks parent domain (e.g. comic.naver.com checks naver.com too).
+  /// Also checks the registrable parent (e.g. comic.naver.com → naver.com),
+  /// but never a public-suffix parent, which would cross tenant boundaries.
   Future<String?> getCookieHeader(String url) async {
     final domain = _normalize(Uri.parse(url).host);
     final merged = <String, String>{};
 
-    // Check exact domain and parent domain
     final domains = [domain];
     final parts = domain.split('.');
     if (parts.length > 2) {
-      domains.add(parts.sublist(parts.length - 2).join('.'));
+      final parent = parts.sublist(parts.length - 2).join('.');
+      // e.g. for foo.github.io the parent is github.io — a public suffix, so
+      // skip it. Only widen to a real registrable domain.
+      if (!_multiLabelSuffixes.contains(parent)) {
+        domains.add(parent);
+      } else if (parts.length > 3) {
+        // foo.bar.github.io → bar.github.io is the registrable domain.
+        domains.add(parts.sublist(parts.length - 3).join('.'));
+      }
     }
 
     final prefs = await SharedPreferences.getInstance();

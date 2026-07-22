@@ -190,7 +190,7 @@ class _ExtensionsTabWidgetState extends State<ExtensionsTabWidget> {
       ),
       child: Row(
         children: [
-          for (final type in ['manga', 'anime'])
+          for (final type in ['manga', 'anime', 'novel'])
             GestureDetector(
               onTap: () => setState(() {
                 _typeFilter = type;
@@ -207,7 +207,11 @@ class _ExtensionsTabWidgetState extends State<ExtensionsTabWidget> {
                   ),
                 ),
                 child: Text(
-                  type == 'manga' ? 'Manga' : 'Anime',
+                  type == 'manga'
+                      ? 'Manga'
+                      : type == 'anime'
+                          ? 'Anime'
+                          : 'Novels',
                   style: GoogleFonts.manrope(
                     fontSize: 13,
                     fontWeight: _typeFilter == type ? FontWeight.w700 : FontWeight.w500,

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -361,15 +362,20 @@ class WebViewService {
     bool done = false;
 
     // JS that captures matching URLs from XHR, fetch, and <video src> changes.
+    // The pattern is an extension-supplied string; injecting it raw into the JS
+    // string literals below let a pattern containing a quote break out of the
+    // script and run in the page. Define it once as a JSON-encoded constant and
+    // reference the variable instead.
     const captureJs = '''
       (function() {
         if (window.__vrfCaptured) return;
         window.__vrfCaptured = '';
+        var __PAT = __PATJSON__;
 
         function _capture(u) {
           if (!u || window.__vrfCaptured) return;
           var s = u.toString();
-          if (s.indexOf('PATTERN') === -1) return;
+          if (s.indexOf(__PAT) === -1) return;
           if (!s.startsWith('http')) s = window.location.origin + s;
           window.__vrfCaptured = s;
         }
@@ -417,7 +423,9 @@ class WebViewService {
 
     try {
       final ua = await CookieStore().getUserAgent();
-      final jsToInject = captureJs.replaceAll('PATTERN', pattern);
+      // jsonEncode gives a safe, fully-escaped JS string literal for the var.
+      final jsToInject =
+          captureJs.replaceAll('__PATJSON__', jsonEncode(pattern));
 
       webView = HeadlessInAppWebView(
         webViewEnvironment: webViewEnvironment,
@@ -476,15 +484,16 @@ class WebViewService {
               source: '''
                 (function() {
                   if (window.__vrfCaptured) return window.__vrfCaptured;
+                  var __PAT = __PATJSON__;
                   // Also try reading currentSrc from any video element
                   var vids = document.querySelectorAll('video');
                   for (var i = 0; i < vids.length; i++) {
                     var cs = vids[i].currentSrc || vids[i].src;
-                    if (cs && cs.indexOf('PATTERN') !== -1 && !cs.startsWith('blob:')) return cs;
+                    if (cs && cs.indexOf(__PAT) !== -1 && !cs.startsWith('blob:')) return cs;
                   }
                   return '';
                 })()
-              '''.replaceAll('PATTERN', pattern));
+              '''.replaceAll('__PATJSON__', jsonEncode(pattern)));
           if (result != null && result.toString().isNotEmpty && result.toString() != '""' && result.toString() != 'null') {
             captured = result.toString();
             // Strip surrounding quotes if present

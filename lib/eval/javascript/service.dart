@@ -42,7 +42,13 @@ class JsExtensionService implements ExtensionService {
     runtime.evaluate('''
 class MProvider {
     get source() {
-        return JSON.parse('${jsonEncode(_mSource.toJson())}');
+        // The value is embedded as a JS object LITERAL, not inside a quoted
+        // string. jsonEncode output is already valid JS, so there is no
+        // surrounding quote for source-controlled metadata (name/baseUrl/…) to
+        // break out of — the previous JSON.parse('…') wrapper put it inside a
+        // single-quoted string that jsonEncode does not escape ' for, making
+        // the source's own index.json metadata an arbitrary-code vector.
+        return ${jsonEncode(_mSource.toJson())};
     }
     get baseUrl() {
         return this.source.baseUrl || "";
@@ -106,7 +112,7 @@ var extention = new DefaultExtension();
 
   @override
   Map<String, String> getHeaders() {
-    final result = _extensionCall<Map>('getHeaders(`$_baseUrl`)', {});
+    final result = _extensionApply<Map>('getHeaders', [_baseUrl], {});
     return result.map((key, value) => MapEntry(key.toString(), value.toString()));
   }
 
@@ -120,41 +126,40 @@ var extention = new DefaultExtension();
 
   @override
   Future<MPages> getPopular(int page) async {
-    return MPages.fromJson(await _extensionCallAsync('getPopular($page)'));
+    return MPages.fromJson(await _extensionApplyAsync('getPopular', [page]));
   }
 
   @override
   Future<MPages> getLatestUpdates(int page) async {
     return MPages.fromJson(
-        await _extensionCallAsync('getLatestUpdates($page)'));
+        await _extensionApplyAsync('getLatestUpdates', [page]));
   }
 
   @override
   Future<MPages> search(String query, int page, List<dynamic> filters) async {
-    final escapedQuery = query.replaceAll('"', '\\"');
     return MPages.fromJson(
-      await _extensionCallAsync(
-        'search("$escapedQuery",$page,${jsonEncode(filterValuesListToJson(filters))})',
+      await _extensionApplyAsync(
+        'search',
+        [query, page, filterValuesListToJson(filters)],
       ),
     );
   }
 
   @override
   Future<MManga> getDetail(String url) async {
-    final escapedUrl = url.replaceAll('`', '\\`');
-    return MManga.fromJson(await _extensionCallAsync('getDetail(`$escapedUrl`)'));
+    return MManga.fromJson(
+        await _extensionApplyAsync('getDetail', [url]));
   }
 
   @override
   Future<List<PageUrl>> getPageList(String url) async {
-    final escapedUrl = url.replaceAll('`', '\\`');
     final pages = LinkedHashSet<PageUrl>(
       equals: (a, b) => a.url == b.url,
       hashCode: (p) => p.url.hashCode,
     );
 
     for (final e
-        in await _extensionCallAsync<List>('getPageList(`$escapedUrl`)')) {
+        in await _extensionApplyAsync<List>('getPageList', [url])) {
       if (e != null) {
         final page = e is String
             ? PageUrl(e.trim())
@@ -181,9 +186,8 @@ var extention = new DefaultExtension();
 
   @override
   Future<List<MVideo>> getVideoList(String url) async {
-    final escapedUrl = url.replaceAll('`', '\\`');
     final raw =
-        await _extensionCallAsync<List>('getVideoList(`$escapedUrl`)');
+        await _extensionApplyAsync<List>('getVideoList', [url]);
     final videos = <MVideo>[];
     for (final e in raw) {
       if (e is! Map) continue;
@@ -223,16 +227,14 @@ var extention = new DefaultExtension();
 
   @override
   Future<MPages> getListing(String listingUrl, int page) async {
-    final escaped = listingUrl.replaceAll('`', '\\`');
     return MPages.fromJson(
-        await _extensionCallAsync('getListing(`$escaped`,$page)'));
+        await _extensionApplyAsync('getListing', [listingUrl, page]));
   }
 
   @override
   Future<String> getHtmlContent(String url) async {
     try {
-      final escaped = url.replaceAll('`', '\\`');
-      final r = await _extensionCallAsync('getHtmlContent(`$escaped`)');
+      final r = await _extensionApplyAsync('getHtmlContent', [url]);
       return r?.toString() ?? '';
     } catch (_) {
       return '';
@@ -301,6 +303,36 @@ var extention = new DefaultExtension();
     _init();
     final jsResult = await runtime.evaluateAsync(
       'jsonStringify(() => extention.$call)',
+    );
+    final promised = await runtime.handlePromise(jsResult);
+    return _decodeJsResult<T>(promised.stringResult);
+  }
+
+  /// Invokes an extension method by passing [args] as a JSON array and calling
+  /// `.apply()`, instead of interpolating each argument into the call string.
+  ///
+  /// This is the injection-safe path: `jsonEncode` of the argument list is a
+  /// valid JS array literal, so a source name, URL, or search query containing
+  /// a quote, backtick, `${…}` or `');` cannot break out of the expression and
+  /// run attacker JS. The old string-built calls escaped only some delimiters
+  /// for the wrong quoting context.
+  String _applyExpr(String method, List<dynamic> args) =>
+      'extention.$method.apply(extention, ${jsonEncode(args)})';
+
+  T _extensionApply<T>(String method, List<dynamic> args, T defaultValue) {
+    _init();
+    try {
+      final res = runtime.evaluate('JSON.stringify(${_applyExpr(method, args)})');
+      return _decodeJsResult<T>(res.stringResult);
+    } catch (_) {
+      return defaultValue;
+    }
+  }
+
+  Future<T> _extensionApplyAsync<T>(String method, List<dynamic> args) async {
+    _init();
+    final jsResult = await runtime.evaluateAsync(
+      'jsonStringify(() => ${_applyExpr(method, args)})',
     );
     final promised = await runtime.handlePromise(jsResult);
     return _decodeJsResult<T>(promised.stringResult);

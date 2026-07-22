@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../../theme/app_theme.dart';
 import '../../widgets/update_prompt.dart';
+import 'vault_settings_page.dart';
 
 class AboutSettingsPage extends StatefulWidget {
   const AboutSettingsPage({super.key});
@@ -33,6 +34,38 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
   }
 
   String get _version => _info?.version ?? '';
+
+  // Secret vault opener: tap the Foxlations logo 9× (moved here from Appearance
+  // settings). Fast consecutive taps only, so it isn't triggered by accident.
+  int _logoTapCount = 0;
+  DateTime _lastLogoTap = DateTime(2000);
+
+  void _onLogoTap(BuildContext context) {
+    final now = DateTime.now();
+    _logoTapCount =
+        now.difference(_lastLogoTap).inMilliseconds < 600 ? _logoTapCount + 1 : 1;
+    _lastLogoTap = now;
+
+    if (_logoTapCount >= 7 && _logoTapCount < 9) {
+      final remaining = 9 - _logoTapCount;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(
+          content: Text(
+              '$remaining more tap${remaining == 1 ? '' : 's'} to open vault settings'),
+          duration: const Duration(milliseconds: 800),
+          behavior: SnackBarBehavior.floating,
+        ));
+    }
+    if (_logoTapCount >= 9) {
+      _logoTapCount = 0;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const VaultSettingsPage()),
+      );
+    }
+  }
 
   Future<void> _copyLink(BuildContext context, String url, String label) async {
     await Clipboard.setData(ClipboardData(text: url));
@@ -79,12 +112,16 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
             ),
             child: Column(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.asset(
-                    'assets/images/foxlations.png',
-                    width: 72,
-                    height: 72,
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _onLogoTap(context),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      'assets/images/foxlations.png',
+                      width: 72,
+                      height: 72,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -202,6 +239,33 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Your private data is now encrypted. Login tokens for '
+                'AniList/MyAnimeList/Kitsu are protected by the device keystore, '
+                'and the vault is properly encrypted with your password instead '
+                'of just hidden. (You\'ll need to reconnect trackers once, and '
+                're-enter your vault password to re-encrypt it.)'),
+            _ChangelogItem('Hardened the app for its public release: connections '
+                'now verify their security certificates, extensions can no '
+                'longer be tricked into running hidden code via a crafted source '
+                'name or URL, and sources must load over https'),
+            _ChangelogItem('RepoForge Scraping Studio: each selector field now '
+                'has a searchable list of known selectors to pick from (with a '
+                'live count of how many things each one matches), so you don\'t '
+                'have to know CSS. The test button is clearer, and "0 matches" '
+                'now shows as a gentle "no match" instead of a red error'),
+            _ChangelogItem('RepoForge now recognises 60+ more site frameworks '
+                'across manga, anime and light novels (Madara, MangaThemesia, '
+                'foolslide, GigaViewer, the big novel CMSes, and many more). '
+                'When it detects one, it auto-fills the selector slots with what '
+                'that framework uses, so you rarely have to type them by hand'),
+            _ChangelogItem('RepoForge no longer mislabels sites as an "AniList '
+                'API" just because they link to AniList — that detection was '
+                'removed (AniList has no readable content to build a source '
+                'from), so sites are now identified by their real framework'),
+            _ChangelogItem('Clearer error when adding a source that can\'t run: '
+                'Tachiyomi/Mihon (Kotlin) repos like keiyoushi aren\'t supported '
+                '— Foxlations uses JavaScript/Dart sources — so it now says so '
+                'instead of failing with a confusing "main" error'),
             _ChangelogItem('Text all over the app is easier to read — subtitles, '
                 'captions, placeholders and dividers were too dim against the '
                 'background, and buttons could show white text on a light '

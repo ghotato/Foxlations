@@ -92,12 +92,21 @@ jobs:
           find "$APP" -maxdepth 2 -iname "*TextRecognition*" -o -maxdepth 2 -iname "*MLKit*" \
             | sed 's/^/  /' || true
           echo
+          # Pod presence is NOT the signal — a previous run reported all four
+          # installed while the feature was still broken, because the plugin's
+          # `#if __has_include(...)` guards couldn't see their headers and the
+          # linker then dropped the unreferenced frameworks. Check the built
+          # BINARY for each recogniser's Objective-C class instead; that only
+          # appears if the guard passed and the code was actually compiled in.
+          BIN="$APP/Runner"
+          echo "── Recogniser classes linked into the binary ──"
+          echo "  Runner size: $(stat -f%z "$BIN" 2>/dev/null || echo '?') bytes"
           missing=""
           for script in Chinese Devanagari Japanese Korean; do
-            if ls ios/Pods 2>/dev/null | grep -qi "MLKitTextRecognition${script}"; then
-              echo "  OK      MLKitTextRecognition${script}"
+            if strings "$BIN" 2>/dev/null | grep -q "MLK${script}TextRecognizerOptions"; then
+              echo "  LINKED  ${script}"
             else
-              echo "  MISSING MLKitTextRecognition${script}"
+              echo "  ABSENT  ${script}"
               missing="${missing} ${script}"
             fi
           done
@@ -105,9 +114,9 @@ jobs:
             # Deliberately non-fatal: the rest of the app is fine, and blocking
             # delivery would cost a testable IPA over one broken feature. The
             # annotation is loud enough not to be missed.
-            echo "::warning::ML Kit language pods did not install:${missing}. CJK OCR falls back to Latin."
+            echo "::warning::ML Kit recognisers NOT linked:${missing}. CJK OCR falls back to Latin. Pods installing is not enough — the plugin's __has_include guards must resolve."
           else
-            echo "All four ML Kit language pods installed."
+            echo "All four ML Kit recognisers are linked into the binary."
           fi
 
       - name: Package ad-hoc signed IPA

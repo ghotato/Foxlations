@@ -87,22 +87,10 @@ find "$DEST" -maxdepth 1 -type f \( -name 'foxlations-*.apk' -o -name 'foxlation
 NOTES=$(sed '1,/^$/d' "$INFO" 2>/dev/null || true)
 [ -n "$NOTES" ] || NOTES="Build ${NNN}."
 
-html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 # Bullets become list items; other non-empty lines become sub-headings.
-NOTES_HTML=$(printf '%s\n' "$NOTES" | html_escape | awk '
-  BEGIN { inlist = 0 }
-  /^[[:space:]]*-[[:space:]]/ {
-    if (!inlist) { print "<ul>"; inlist = 1 }
-    sub(/^[[:space:]]*-[[:space:]]/, "")
-    print "<li>" $0 "</li>"; next
-  }
-  /^[[:space:]]*$/ { if (inlist) { print "</ul>"; inlist = 0 } next }
-  {
-    if (inlist) { print "</ul>"; inlist = 0 }
-    print "<h3>" $0 "</h3>"
-  }
-  END { if (inlist) print "</ul>" }
-')
+# The notes are NOT rendered on the download page — they belong in the app's
+# About > What's New and in AltStore. Only the JSON form is needed, for
+# latest.json (read by the in-app update prompt) and altstore.json.
 # JSON string: escape backslashes and quotes, then join lines with \n.
 json_escape() {
   sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\r//g' | awk '{printf "%s\\n", $0}'
@@ -486,12 +474,6 @@ ${SHOTS_HTML}
     <p class="note">A free Apple ID signature lasts <b>7 days</b> before the app needs re-signing; AltStore and SideStore can do that in the background. Needs iOS 15.5 or newer. You can also just download the IPA and use <b>Sideloadly</b>.</p>
   </div>
 
-  <div class="card">
-    <h2>What's new</h2>
-    <div id="notes">
-${NOTES_HTML}
-    </div>
-  </div>
 
   <footer id="foot">build ${NNN} · ${VERSION} · ${DATE}</footer>
 </div>
@@ -518,17 +500,9 @@ ${NOTES_HTML}
     if (d.ipa?.available) {
       set('#ipa-meta', 'IPA · unsigned · ' + (d.ipa.display || ''));
     }
-    const notes = document.querySelector('#notes');
-    if (notes && d.notes) {
-      notes.replaceChildren();
-      for (const line of d.notes.split('\\n')) {
-        const t = line.trim();
-        if (!t) continue;
-        const el = document.createElement(t.startsWith('- ') ? 'li' : 'h3');
-        el.textContent = t.startsWith('- ') ? t.slice(2) : t;
-        notes.appendChild(el);
-      }
-    }
+    // Release notes are deliberately not shown on this page — they live in the
+    // app's About > What's New, and in AltStore via altstore.json. `d.notes` is
+    // still published in latest.json because the in-app update prompt reads it.
   } catch (_) {
     // Offline or manifest missing — the baked-in values stay.
   }

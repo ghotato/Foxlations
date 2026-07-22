@@ -1,7 +1,7 @@
 name: manga_reader
 description: A manga reading app with extension-based sources.
 publish_to: 'none'
-version: 0.0.30+24
+version: 0.2.1+25
 
 environment:
   sdk: ^3.11.3
@@ -20,6 +20,10 @@ dependencies:
   shared_preferences: ^2.2.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  # Holds the AES key for the encrypted Hive boxes in the platform keystore
+  # (iOS Keychain / Android EncryptedSharedPreferences), so OAuth tokens are
+  # not readable from the app's data directory.
+  flutter_secure_storage: ^9.2.2
 
   # State
   provider: ^6.1.2

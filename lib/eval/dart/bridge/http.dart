@@ -71,12 +71,14 @@ class _HttpClient {
 
   Future<rhttp.RhttpClient> _getClient() async {
     if (_client != null) return _client!;
+    // TLS verification MUST stay on: _buildHeaders attaches the user's stored
+    // cookies (including the HttpOnly cf_clearance lifted from the WebView), so
+    // an accepted forged cert would hand a network MITM the user's cleared
+    // Cloudflare session and let it inject arbitrary source content. The JS
+    // bridge's Dio client verifies; this one must match.
     _client = await rhttp.RhttpClient.create(
       settings: const rhttp.ClientSettings(
         throwOnStatusCode: false,
-        tlsSettings: rhttp.TlsSettings(
-          verifyCertificates: false,
-        ),
       ),
     );
     return _client!;
@@ -178,8 +180,9 @@ class _HttpClient {
   /// response stream into a single `List<int>` without any text decoding.
   Future<List<int>> _dartGetBytes(
       String url, Map<String, String> headers) async {
+    // No badCertificateCallback override — a bad cert must fail, not be
+    // accepted (this request carries the user's session cookies).
     final httpClient = HttpClient();
-    httpClient.badCertificateCallback = (_, __, ___) => true;
     try {
       final request = await httpClient.getUrl(Uri.parse(url));
       headers.forEach((k, v) => request.headers.set(k, v));
@@ -200,7 +203,6 @@ class _HttpClient {
   /// Fallback GET using Dart's built-in HttpClient (for when rhttp DNS fails)
   Future<_HttpResponse> _dartGet(String url, Map<String, String> headers) async {
     final httpClient = HttpClient();
-    httpClient.badCertificateCallback = (_, __, ___) => true;
     try {
       final request = await httpClient.getUrl(Uri.parse(url));
       headers.forEach((k, v) => request.headers.set(k, v));

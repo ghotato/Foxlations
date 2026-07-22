@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/providers/vault_provider.dart';
 import '../../../core/providers/source_provider.dart';
 import '../../../theme/app_theme.dart';
+import 'vault_contents_page.dart';
 
 class VaultSettingsPage extends StatelessWidget {
   const VaultSettingsPage({super.key});
@@ -73,6 +74,27 @@ class VaultSettingsPage extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => const _EditVaultCategoriesPage()),
                 ),
+              ),
+              const SizedBox(height: 8),
+              _SectionHeader(title: 'Contents'),
+              _NavTile(
+                icon: Icons.swap_vert_rounded,
+                iconColor: cs.primary,
+                title: 'Manage Vault Contents',
+                subtitle: 'Move manga, anime or novels in and out of the vault',
+                onTap: () {
+                  // Moving requires the vault unlocked, so prompt first when a
+                  // password is set and it isn't open yet.
+                  if (vault.hasPassword && !vault.isUnlocked) {
+                    AppTheme.showSnackBar(
+                        context, 'Unlock the vault first (tap in from the library)');
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const VaultContentsPage()),
+                  );
+                },
               ),
               const SizedBox(height: 8),
               _SectionHeader(title: 'Hidden Sources'),
@@ -194,8 +216,11 @@ class VaultSettingsPage extends StatelessWidget {
                 child: Text('Cancel', style: GoogleFonts.manrope(
                     fontWeight: FontWeight.w600, color: cs.outline))),
               FilledButton(
-                onPressed: () {
-                  if (vault.hasPassword && !vault.verifyPassword(currentController.text)) {
+                onPressed: () async {
+                  // Verifying now derives the key and opens the encrypted
+                  // boxes, so it's async and takes ~1s.
+                  if (vault.hasPassword &&
+                      !await vault.unlock(currentController.text)) {
                     setDialogState(() => error = 'Current password is wrong');
                     return;
                   }
@@ -205,11 +230,18 @@ class VaultSettingsPage extends StatelessWidget {
                     setDialogState(() => error = 'Passwords do not match');
                     return;
                   }
-                  vault.setPassword(newPw.isEmpty ? null : newPw);
+                  setDialogState(() => error = newPw.isEmpty
+                      ? 'Removing encryption…'
+                      : 'Encrypting vault…');
+                  await vault.setPassword(newPw.isEmpty ? null : newPw);
+                  if (!ctx.mounted) return;
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(newPw.isEmpty ? 'Password removed' : 'Password set'),
-                    duration: const Duration(seconds: 1)));
+                  if (!context.mounted) return;
+                  AppTheme.showSnackBar(
+                      context,
+                      newPw.isEmpty
+                          ? 'Password removed — vault is no longer encrypted'
+                          : 'Password set — vault encrypted');
                 },
                 style: FilledButton.styleFrom(backgroundColor: cs.primary),
                 child: Text('Save', style: GoogleFonts.manrope(fontWeight: FontWeight.w700))),

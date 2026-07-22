@@ -4,6 +4,20 @@ import '../models/manga_model.dart';
 import '../models/chapter_model.dart';
 import '../models/category_model.dart';
 import '../services/library_service.dart';
+import '../services/vault_crypto.dart';
+
+/// Arguments for the off-thread key derivation.
+class _KdfRequest {
+  final String password;
+  final Uint8List salt;
+  final int iterations;
+  const _KdfRequest(this.password, this.salt, this.iterations);
+}
+
+/// PBKDF2 with 50k iterations takes ~1s in pure Dart, which would jank the UI
+/// on the main isolate — so it runs via `compute`. Must be top-level.
+Uint8List _deriveKeyIsolate(_KdfRequest r) =>
+    VaultCrypto.deriveKey(r.password, r.salt, iterations: r.iterations);
 
 class VaultProvider extends ChangeNotifier {
   static const _settingsBoxName = 'vault_settings';
@@ -36,50 +50,124 @@ class VaultProvider extends ChangeNotifier {
     _vaultEnabled = _settingsBox?.get('enabled', defaultValue: true) ?? true;
     _vaultSourceIds = ((_settingsBox?.get('vault_source_ids') as List?) ?? [])
         .cast<String>().toSet();
-    await _vaultService.init();
-    _manga = _vaultService.getAllManga();
-    _categories = _vaultService.getCategories();
+
+    // Vault contents are NOT opened here when a password is set. Previously
+    // they were loaded at startup regardless, so the password only hid the UI
+    // — the plaintext Hive files were readable by anything with filesystem
+    // access. Now the boxes stay encrypted and closed until [unlock] supplies
+    // the key derived from the password.
+    if (!hasPassword) {
+      await _vaultService.init();
+      _manga = _vaultService.getAllManga();
+      _categories = _vaultService.getCategories();
+    }
     _initialized = true;
     notifyListeners();
   }
 
   // ── Password protection ─────────────────────────────────────
-  bool get hasPassword => (_settingsBox?.get('vault_password') as String?)?.isNotEmpty ?? false;
+  bool get hasPassword =>
+      (_settingsBox?.get('vault_verifier') as String?)?.isNotEmpty ?? false;
 
-  bool verifyPassword(String password) {
-    final stored = _settingsBox?.get('vault_password') as String?;
-    if (stored == null || stored.isEmpty) return true;
-    return _hashPassword(password) == stored;
+  /// True once [unlock] has succeeded — i.e. the encrypted boxes are open.
+  bool get isUnlocked => !hasPassword || _vaultService.isOpen;
+
+  Uint8List _saltOrNew() {
+    final stored = _settingsBox?.get('vault_salt');
+    if (stored is List && stored.isNotEmpty) {
+      return Uint8List.fromList(stored.cast<int>());
+    }
+    return VaultCrypto.newSalt();
   }
 
-  void setPassword(String? password) {
-    if (password == null || password.isEmpty) {
-      _settingsBox?.delete('vault_password');
-    } else {
-      _settingsBox?.put('vault_password', _hashPassword(password));
+  /// Derives the key, checks it against the stored verifier, and — only on
+  /// success — opens the encrypted boxes and loads their contents.
+  Future<bool> unlock(String password) async {
+    if (!hasPassword) return true;
+    final salt = _saltOrNew();
+    final iterations =
+        (_settingsBox?.get('vault_iterations') as int?) ??
+            VaultCrypto.defaultIterations;
+
+    final key = await compute<_KdfRequest, Uint8List>(
+      _deriveKeyIsolate,
+      _KdfRequest(password, salt, iterations),
+    );
+    if (VaultCrypto.verifierFor(key) !=
+        (_settingsBox?.get('vault_verifier') as String?)) {
+      return false;
     }
+
+    await _vaultService.init(cipher: VaultCrypto.cipherFor(key));
+    _manga = _vaultService.getAllManga();
+    _categories = _vaultService.getCategories();
     notifyListeners();
+    return true;
   }
 
-  String _hashPassword(String password) {
-    // Simple hash — not cryptographically strong but sufficient for local vault lock
-    var hash = 0x811c9dc5;
-    for (var i = 0; i < password.length; i++) {
-      hash ^= password.codeUnitAt(i);
-      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+  /// Sets or clears the vault password.
+  ///
+  /// Changing it re-encrypts: the current contents are read with the old key
+  /// (or from the plaintext boxes on first use), the boxes are deleted, then
+  /// rewritten under the new key. Without this, existing vault data would be
+  /// stranded in files the new key can't open.
+  Future<void> setPassword(String? password) async {
+    final existingManga = List<LibraryManga>.from(_manga);
+    final existingCats = _categories.map((c) => c.name).toList();
+
+    await _vaultService.close();
+    await Hive.deleteBoxFromDisk('vault_manga');
+    await Hive.deleteBoxFromDisk('vault_chapters');
+    await Hive.deleteBoxFromDisk('vault_categories');
+
+    if (password == null || password.isEmpty) {
+      await _settingsBox?.delete('vault_verifier');
+      await _settingsBox?.delete('vault_salt');
+      await _settingsBox?.delete('vault_iterations');
+      await _vaultService.init();
+    } else {
+      final salt = VaultCrypto.newSalt();
+      final key = await compute<_KdfRequest, Uint8List>(
+        _deriveKeyIsolate,
+        _KdfRequest(password, salt, VaultCrypto.defaultIterations),
+      );
+      await _settingsBox?.put('vault_salt', salt.toList());
+      await _settingsBox?.put('vault_iterations', VaultCrypto.defaultIterations);
+      await _settingsBox?.put('vault_verifier', VaultCrypto.verifierFor(key));
+      await _vaultService.init(cipher: VaultCrypto.cipherFor(key));
     }
-    return hash.toRadixString(16).padLeft(8, '0');
+
+    // Restore what was there before, now under the new encryption.
+    for (final name in existingCats) {
+      if (!_vaultService.getCategories().any((c) => c.name == name)) {
+        await _vaultService.addCategory(name);
+      }
+    }
+    for (final m in existingManga) {
+      await _vaultService.addManga(m);
+    }
+    _manga = _vaultService.getAllManga();
+    _categories = _vaultService.getCategories();
+    notifyListeners();
   }
 
   // ── Vault mode control ──────────────────────────────────────
   void enterVault() {
     if (!_vaultEnabled) return;
+    if (hasPassword && !_vaultService.isOpen) return; // must unlock first
     _vaultActive = true;
     notifyListeners();
   }
 
-  void exitVault() {
+  /// Leaving the vault closes the encrypted boxes and drops the decrypted copy
+  /// from memory, so the data isn't left readable until the app restarts.
+  Future<void> exitVault() async {
     _vaultActive = false;
+    if (hasPassword) {
+      await _vaultService.close();
+      _manga = [];
+      _categories = [];
+    }
     notifyListeners();
   }
 
@@ -154,6 +242,18 @@ class VaultProvider extends ChangeNotifier {
 
   Future<void> removeFromLibrary(String sourceId, String url) async {
     await _vaultService.removeManga(sourceId, url);
+    _manga = _vaultService.getAllManga();
+    notifyListeners();
+  }
+
+  /// Full chapter objects (with read state) for an entry, for moving out.
+  List<LibraryChapter> fullChapters(String sourceId, String url) =>
+      _vaultService.getFullChapters(sourceId, url);
+
+  /// Adds an entry and its chapters into the vault, preserving read progress.
+  Future<void> addEntryWithChapters(
+      LibraryManga manga, List<LibraryChapter> chapters) async {
+    await _vaultService.addEntryWithChapters(manga, chapters);
     _manga = _vaultService.getAllManga();
     notifyListeners();
   }

@@ -17,6 +17,7 @@ import 'core/providers/download_provider.dart';
 import 'core/services/library_update_service.dart';
 import 'core/services/backup_service.dart';
 import 'core/services/app_navigator.dart';
+import 'core/services/secure_store.dart';
 import 'theme/app_theme.dart';
 import 'routes/app_routes.dart';
 import 'widgets/app_navigation.dart';
@@ -32,6 +33,9 @@ void main() async {
   Hive.registerAdapter(LibraryMangaAdapter());
   Hive.registerAdapter(LibraryChapterAdapter());
   Hive.registerAdapter(CategoryAdapter());
+  // Must run before any credential-bearing box is opened — providers below
+  // read SecureStore.cipher during their initialize().
+  await SecureStore.initialize();
   // Initialize rhttp (Rust HTTP client with Chrome TLS fingerprint)
   await Rhttp.init();
   // Initialize WebView environment for Cloudflare cookie extraction
@@ -164,8 +168,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 prefixIcon: Icon(Icons.lock_outline_rounded, size: 18, color: cs.outline),
               ),
-              onSubmitted: (_) {
-                if (vault.verifyPassword(controller.text)) {
+              onSubmitted: (_) async {
+                // unlock() derives the key and opens the encrypted boxes, so
+                // it's async (~1s) and a wrong password simply can't decrypt.
+                setDialogState(() => error = null);
+                if (await vault.unlock(controller.text)) {
+                  if (!ctx.mounted) return;
                   Navigator.pop(ctx);
                   vault.enterVault();
                 } else {
@@ -180,8 +188,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               child: Text('Cancel', style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w600, color: cs.outline))),
             FilledButton(
-              onPressed: () {
-                if (vault.verifyPassword(controller.text)) {
+              onPressed: () async {
+                // unlock() derives the key and opens the encrypted boxes, so
+                // it's async (~1s) and a wrong password simply can't decrypt.
+                setDialogState(() => error = null);
+                if (await vault.unlock(controller.text)) {
+                  if (!ctx.mounted) return;
                   Navigator.pop(ctx);
                   vault.enterVault();
                 } else {

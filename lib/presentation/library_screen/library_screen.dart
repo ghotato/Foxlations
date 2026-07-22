@@ -749,11 +749,32 @@ class _LibraryScreenState extends State<LibraryScreen>
                           final activeManga = vault.vaultActive ? vault.manga : library.manga;
                           final filtered = _applyFilters(activeManga);
 
+                          // Pull down anywhere to update the category the user
+                          // is currently viewing (all entries when on "All").
+                          Widget withPullToRefresh(Widget child) =>
+                              RefreshIndicator(
+                                onRefresh: () => _refreshLibrary(scoped: true),
+                                child: child,
+                              );
+
                           if (filtered.isEmpty) {
-                            return _EmptyState(
-                              isSearching: _searchQuery.isNotEmpty,
-                              searchQuery: _searchQuery,
-                              isBookmarkFilter: _showBookmarksOnly,
+                            return withPullToRefresh(
+                              ListView(
+                                // A plain Center can't be pulled; a scrollable
+                                // list can.
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  SizedBox(
+                                    height:
+                                        MediaQuery.of(context).size.height * 0.6,
+                                    child: _EmptyState(
+                                      isSearching: _searchQuery.isNotEmpty,
+                                      searchQuery: _searchQuery,
+                                      isBookmarkFilter: _showBookmarksOnly,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             );
                           }
 
@@ -778,20 +799,24 @@ class _LibraryScreenState extends State<LibraryScreen>
                             }
                           }
 
-                          return _isGridView
-                              ? _LibraryGrid(
-                                  mangaList: filtered,
-                                  columnCount: columnCount,
-                                  selectedIds: _isSelectMode ? _selectedMangaIds : null,
-                                  onTap: onTap,
-                                  onLongPress: onLong,
-                                )
-                              : _LibraryList(
-                                  mangaList: filtered,
-                                  selectedIds: _isSelectMode ? _selectedMangaIds : null,
-                                  onTap: onTap,
-                                  onLongPress: onLong,
-                                );
+                          return withPullToRefresh(
+                            _isGridView
+                                ? _LibraryGrid(
+                                    mangaList: filtered,
+                                    columnCount: columnCount,
+                                    selectedIds:
+                                        _isSelectMode ? _selectedMangaIds : null,
+                                    onTap: onTap,
+                                    onLongPress: onLong,
+                                  )
+                                : _LibraryList(
+                                    mangaList: filtered,
+                                    selectedIds:
+                                        _isSelectMode ? _selectedMangaIds : null,
+                                    onTap: onTap,
+                                    onLongPress: onLong,
+                                  ),
+                          );
                         },
                       ),
                     ),
@@ -1304,6 +1329,9 @@ class _LibraryGridState extends State<_LibraryGrid>
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
+      // Always scrollable so pull-to-refresh triggers even when the grid
+      // doesn't fill the screen.
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: widget.columnCount,
@@ -1455,6 +1483,7 @@ class _LibraryList extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
       itemCount: mangaList.length,
       itemBuilder: (_, index) {

@@ -12,6 +12,18 @@ class LibraryService {
   Box<LibraryChapter>? _chapterBox;
   Box<Category>? _categoryBox;
 
+  bool get isOpen => _mangaBox?.isOpen ?? false;
+
+  /// Closes the boxes and drops the in-memory copies, so locking the vault
+  /// actually evicts its data rather than just hiding it behind a flag.
+  Future<void> close() async {
+    await _mangaBox?.close();
+    await _chapterBox?.close();
+    await _categoryBox?.close();
+    _mangaBox = _chapterBox = null;
+    _categoryBox = null;
+  }
+
   static const _defaultCategories = [
     'Reading',
     'Completed',
@@ -20,10 +32,17 @@ class LibraryService {
     'Plan to Read',
   ];
 
-  Future<void> init() async {
-    _mangaBox = await Hive.openBox<LibraryManga>('${_prefix}_manga');
-    _chapterBox = await Hive.openBox<LibraryChapter>('${_prefix}_chapters');
-    _categoryBox = await Hive.openBox<Category>('${_prefix}_categories');
+  /// [cipher] encrypts the underlying Hive files at rest. Used by the vault so
+  /// its contents are unreadable without the user's password — Hive refuses to
+  /// open an encrypted box with the wrong key, so this is the actual access
+  /// control, not the password prompt in the UI.
+  Future<void> init({HiveAesCipher? cipher}) async {
+    _mangaBox = await Hive.openBox<LibraryManga>('${_prefix}_manga',
+        encryptionCipher: cipher);
+    _chapterBox = await Hive.openBox<LibraryChapter>('${_prefix}_chapters',
+        encryptionCipher: cipher);
+    _categoryBox = await Hive.openBox<Category>('${_prefix}_categories',
+        encryptionCipher: cipher);
     // Seed default categories on first run
     if (_categoryBox!.isEmpty) {
       for (int i = 0; i < _defaultCategories.length; i++) {
@@ -111,6 +130,27 @@ class LibraryService {
 
   Future<void> addManga(LibraryManga manga) async {
     await _mangaBox?.put(manga.uniqueKey, manga);
+  }
+
+  /// Adds an entry together with its full chapter objects, preserving per-
+  /// chapter read state and page progress. Used when moving a title between the
+  /// normal library and the vault so nothing is lost in the transfer.
+  Future<void> addEntryWithChapters(
+      LibraryManga manga, List<LibraryChapter> chapters) async {
+    await _mangaBox?.put(manga.uniqueKey, manga);
+    for (final ch in chapters) {
+      // Re-home the chapter to this box exactly as-is (isRead/lastPageRead/
+      // readAt intact); the destination has no prior copy to merge with.
+      await _chapterBox?.put(ch.uniqueKey, ch);
+    }
+  }
+
+  /// The full chapter objects for an entry (with read state), for moving.
+  List<LibraryChapter> getFullChapters(String sourceId, String mangaUrl) {
+    return _chapterBox?.values
+            .where((c) => c.sourceId == sourceId && c.mangaUrl == mangaUrl)
+            .toList() ??
+        [];
   }
 
   Future<void> removeManga(String sourceId, String url) async {

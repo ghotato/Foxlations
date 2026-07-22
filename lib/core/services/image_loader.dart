@@ -24,12 +24,11 @@ class ImageLoader {
 
   Future<rhttp.RhttpClient> _getClient() async {
     if (_client != null) return _client!;
+    // Verify TLS — image requests carry per-domain cookies too, and a MITM
+    // that can forge a cert could otherwise swap image bytes or harvest them.
     _client = await rhttp.RhttpClient.create(
       settings: const rhttp.ClientSettings(
         throwOnStatusCode: false,
-        tlsSettings: rhttp.TlsSettings(
-          verifyCertificates: false,
-        ),
       ),
     );
     return _client!;

@@ -1501,7 +1501,17 @@ class _Spec {
 
   /// Frameworks whose sources should be generated as JSON-API (not HTML).
   /// Add new API frameworks here + a body in [_apiBodyFor].
-  static const Set<String> _apiFrameworks = {'KeyoApp', 'MangaDex', 'HeanCMS'};
+  static const Set<String> _apiFrameworks = {
+    'KeyoApp', 'MangaDex', 'HeanCMS',
+    // lib-multisrc API/GraphQL/tRPC backends (build 25). Each hits a JSON API
+    // rather than scraping HTML; they route through the generic API body with
+    // the catalog endpoints the detector emits. Best-effort until on-device
+    // validation — the response schemas vary and may need per-framework tuning.
+    'LibGroup API', 'MangaHub API', 'Iken API', 'MangAdventure', 'MonochromeCMS',
+    'PizzaReader', 'MCCMS', 'GreenShit API', 'MangoTheme API', 'SpicyTheme API',
+    'EZManhwa API', 'Senkuro', 'Hiper (tRPC)', 'HotNovelPub API', 'Rulate API',
+    'NovelCool API', 'UzayManga',
+  };
   bool get isApiFramework => _apiFrameworks.contains(framework);
 
   /// Tube/video frameworks: one video per page, listing of `.thumb-block`
