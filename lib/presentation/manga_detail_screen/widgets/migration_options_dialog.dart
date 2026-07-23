@@ -19,22 +19,26 @@ enum MigrationAction {
 class MigrationOptions {
   final bool chapters;
   final bool categories;
+  final bool tracking;
   final bool removeDownloads;
 
   const MigrationOptions({
     this.chapters = true,
     this.categories = true,
+    this.tracking = true,
     this.removeDownloads = true,
   });
 
   MigrationOptions copyWith({
     bool? chapters,
     bool? categories,
+    bool? tracking,
     bool? removeDownloads,
   }) =>
       MigrationOptions(
         chapters: chapters ?? this.chapters,
         categories: categories ?? this.categories,
+        tracking: tracking ?? this.tracking,
         removeDownloads: removeDownloads ?? this.removeDownloads,
       );
 }
@@ -52,9 +56,8 @@ class MigrationChoice {
 /// title — not whether the other source actually has the whole series. Opening
 /// it first turns migration from a guess into a check.
 ///
-/// Deliberately no "Tracking" toggle: tracker links are held per service, not
-/// per entry, so there is nothing per-manga to carry over and the switch would
-/// do nothing.
+/// "Tracking" re-binds the original entry's per-manga tracker records (MAL /
+/// AniList / Kitsu) to the new entry, so a migrated series keeps syncing.
 Future<MigrationChoice?> showMigrationOptions(
   BuildContext context, {
   required String targetSourceName,
@@ -124,6 +127,8 @@ Future<MigrationChoice?> showMigrationOptions(
                     (v) => opts = opts.copyWith(chapters: v)),
                 check('Categories', opts.categories,
                     (v) => opts = opts.copyWith(categories: v)),
+                check('Tracking', opts.tracking,
+                    (v) => opts = opts.copyWith(tracking: v)),
                 check('Remove downloads if migrate', opts.removeDownloads,
                     (v) => opts = opts.copyWith(removeDownloads: v)),
               ],

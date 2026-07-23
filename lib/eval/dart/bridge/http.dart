@@ -7,6 +7,7 @@ import 'package:d4rt/d4rt.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
 import '../../../core/services/cookie_store.dart';
 import '../../../core/services/webview_service.dart';
+import '../../model/m_source.dart';
 
 /// When true, HTTP bridge skips WebView operations (running in background isolate).
 bool isBackgroundIsolate = false;
@@ -19,14 +20,23 @@ class HttpBridge {
       nativeType: _HttpClient,
       name: 'Client',
       constructors: {
+        // Client() — no base. Client(source) — resolve relative URLs against
+        // the source's baseUrl (Mangayomi-format sources rely on this).
         '': (visitor, positionalArgs, namedArgs) {
-          return _HttpClient();
+          String? base;
+          if (positionalArgs.isNotEmpty && positionalArgs[0] is MSource) {
+            base = (positionalArgs[0] as MSource).baseUrl;
+          }
+          return _HttpClient(baseUrl: base);
         },
       },
       methods: {
         'get': (visitor, instance, positionalArgs, namedArgs) async {
           final client = instance as _HttpClient;
-          final url = positionalArgs[0] as String;
+          // Accept a String OR a Uri: Mangayomi-format sources commonly pass
+          // client.get(Uri.parse(...)), and a Uri's toString() is the URL.
+          // Resolve relative paths against the client's base.
+          final url = client._resolve('${positionalArgs[0]}');
           final headers =
               (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
           return await client.get(url, headers: headers);
@@ -37,14 +47,20 @@ class HttpBridge {
         // pass Range, Referer, etc.
         'getBytes': (visitor, instance, positionalArgs, namedArgs) async {
           final client = instance as _HttpClient;
-          final url = positionalArgs[0] as String;
+          // Accept a String OR a Uri: Mangayomi-format sources commonly pass
+          // client.get(Uri.parse(...)), and a Uri's toString() is the URL.
+          // Resolve relative paths against the client's base.
+          final url = client._resolve('${positionalArgs[0]}');
           final headers =
               (namedArgs['headers'] as Map?)?.cast<String, String>() ?? {};
           return await client.getBytes(url, headers: headers);
         },
         'post': (visitor, instance, positionalArgs, namedArgs) async {
           final client = instance as _HttpClient;
-          final url = positionalArgs[0] as String;
+          // Accept a String OR a Uri: Mangayomi-format sources commonly pass
+          // client.get(Uri.parse(...)), and a Uri's toString() is the URL.
+          // Resolve relative paths against the client's base.
+          final url = client._resolve('${positionalArgs[0]}');
           // Accept headers as positional[1] (if Map) or named
           Map<String, String> headers = {};
           dynamic body;
@@ -68,6 +84,26 @@ class HttpBridge {
 
 class _HttpClient {
   rhttp.RhttpClient? _client;
+
+  /// Base URL for resolving relative request paths. Mangayomi-format sources
+  /// construct `Client(source)` and then call `get('/relative/path')`, relying
+  /// on the client to resolve against the source's base. Null for the bare
+  /// `Client()` that hand-written Foxtensions sources use (they pass absolute
+  /// URLs).
+  final String? baseUrl;
+  _HttpClient({this.baseUrl});
+
+  /// Resolve a possibly-relative URL against [baseUrl].
+  String _resolve(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    final b = baseUrl;
+    if (b == null || b.isEmpty) return url;
+    try {
+      return Uri.parse(b).resolve(url).toString();
+    } catch (_) {
+      return url.startsWith('/') ? '$b$url' : '$b/$url';
+    }
+  }
 
   Future<rhttp.RhttpClient> _getClient() async {
     if (_client != null) return _client!;

@@ -89,6 +89,49 @@ class TrackingProvider extends ChangeNotifier {
   List<TrackRecord> bindingsFor(String mangaKey) =>
       _service.bindingsFor(mangaKey);
 
+  /// The app has used two mangaKey formats over time (`id_url` in the detail
+  /// screen, `id::url` in the reader/library). Check both so a lookup never
+  /// misses a binding written under the other convention.
+  List<String> _keyFormats(String sourceId, String url) =>
+      ['${sourceId}_$url', '$sourceId::$url'];
+
+  /// Move (or copy) a series' tracker bindings from one entry to another —
+  /// used when migrating a manga to a different source so it keeps syncing.
+  /// Writes under both key formats so whichever the rest of the app reads back
+  /// will find them. When [removeOld] is true the source entry's bindings are
+  /// cleared (a migration replaces the original; a copy leaves it in place).
+  Future<void> copyBindings({
+    required String fromSourceId,
+    required String fromUrl,
+    required String toSourceId,
+    required String toUrl,
+    bool removeOld = true,
+  }) async {
+    final fromKeys = _keyFormats(fromSourceId, fromUrl);
+    // Gather bindings from either key format, de-duped by tracker.
+    final byTracker = <String, TrackRecord>{};
+    for (final k in fromKeys) {
+      for (final r in _service.bindingsFor(k)) {
+        byTracker[r.trackerId] = r;
+      }
+    }
+    if (byTracker.isEmpty) return;
+
+    for (final k in _keyFormats(toSourceId, toUrl)) {
+      for (final r in byTracker.values) {
+        await _service.saveBinding(k, r);
+      }
+    }
+    if (removeOld) {
+      for (final k in fromKeys) {
+        for (final id in byTracker.keys) {
+          await _service.removeBinding(k, id);
+        }
+      }
+    }
+    notifyListeners();
+  }
+
   /// Bind a manga to a search result on [trackerId], pull the current remote
   /// state if any, seed local progress with [localProgress], push, and save.
   Future<TrackRecord?> bind(

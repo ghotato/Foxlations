@@ -1,11 +1,30 @@
 import 'dart:convert';
 import 'package:d4rt/d4rt.dart';
 import 'package:flutter/foundation.dart';
+import 'package:xpath_selector_html_parser/xpath_selector_html_parser.dart';
 import '../../model/m_provider.dart';
 import '../../model/filter.dart';
 import 'document.dart';
 import '../../../core/services/webview_service.dart';
 import 'http.dart';
+
+/// Synchronous source-preference cache.
+///
+/// Mangayomi-format sources call `getPreferenceValue(sourceId, key)` inline
+/// while building a request, so the read has to be synchronous — but the store
+/// (SharedPreferences) is async. DartExtensionService loads a source's prefs
+/// into here before invoking it; the bridge function then reads them without
+/// awaiting. Keyed `<sourceId>::<key>` to match the on-disk
+/// `source_pref_<sourceId>_<key>` scheme the settings page writes.
+class SourcePrefCache {
+  static final Map<String, String> _values = {};
+
+  static void put(int sourceId, Map<String, String> prefs) {
+    prefs.forEach((k, v) => _values['$sourceId::$k'] = v);
+  }
+
+  static String get(int sourceId, String key) => _values['$sourceId::$key'] ?? '';
+}
 
 class MProviderBridge {
   static BridgedClass get bridgedClass {
@@ -254,6 +273,71 @@ class MProviderUtilities {
           if (v == null) return true;
           return !excludes.contains(v.toString().toLowerCase());
         }).toList();
+      },
+      sourceUri: lib,
+    );
+
+    // ── Mangayomi-compatibility helpers ──────────────────────────────────
+    // These are the top-level functions m2k3a / Mangayomi-format sources call
+    // that Foxlations didn't previously provide. Signatures match Mangayomi's
+    // bridge so those sources run unchanged.
+
+    // xpath(html, expr) — evaluate an XPath expression over an HTML string,
+    // returning the matched text/attribute values. Multiple nodes -> their
+    // attrs; a single node -> its attr (or text). Errors yield an empty list so
+    // a bad expression degrades gracefully instead of throwing.
+    interpreter.registertopLevelFunction(
+      'xpath',
+      (visitor, positionalArgs, namedArgs, typeArgs) {
+        try {
+          final html = positionalArgs[0] as String;
+          final expr = positionalArgs[1] as String;
+          final q = HtmlXPath.html(html).query(expr);
+          final out = <String>[];
+          if (q.nodes.length > 1) {
+            for (final a in q.attrs) {
+              if (a != null) out.add(a.trim());
+            }
+          } else if (q.nodes.length == 1) {
+            final a = q.attr;
+            if (a != null && a.trim().isNotEmpty) out.add(a.trim());
+          }
+          return out;
+        } catch (_) {
+          return <String>[];
+        }
+      },
+      sourceUri: lib,
+    );
+
+    // getPreferenceValue(sourceId, key) — read a stored source preference,
+    // synchronously, from the cache DartExtensionService preloads.
+    interpreter.registertopLevelFunction(
+      'getPreferenceValue',
+      (visitor, positionalArgs, namedArgs, typeArgs) {
+        final id = positionalArgs[0];
+        final key = positionalArgs[1] as String;
+        return SourcePrefCache.get(id is int ? id : int.tryParse('$id') ?? 0, key);
+      },
+      sourceUri: lib,
+    );
+
+    // regExp(input, pattern, replace, type, group) — type 0 replaces all
+    // matches, type 1 returns the given capture group of the first match.
+    interpreter.registertopLevelFunction(
+      'regExp',
+      (visitor, positionalArgs, namedArgs, typeArgs) {
+        final input = positionalArgs[0] as String;
+        final pattern = positionalArgs[1] as String;
+        final replace = positionalArgs.length > 2 ? '${positionalArgs[2]}' : '';
+        final type = positionalArgs.length > 3 ? positionalArgs[3] as int : 0;
+        final group = positionalArgs.length > 4 ? positionalArgs[4] as int : 0;
+        try {
+          if (type == 0) return input.replaceAll(RegExp(pattern), replace);
+          return RegExp(pattern).firstMatch(input)?.group(group) ?? '';
+        } catch (_) {
+          return type == 0 ? input : '';
+        }
       },
       sourceUri: lib,
     );

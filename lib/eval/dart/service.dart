@@ -10,7 +10,9 @@ import '../model/m_video.dart';
 import '../model/page_url.dart';
 import '../model/source_preference.dart';
 import '../interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/cookie_store.dart';
+import 'bridge/m_provider.dart';
 
 class DartExtensionService implements ExtensionService {
   final MSource _mSource;
@@ -29,7 +31,9 @@ class DartExtensionService implements ExtensionService {
     _interpreter = D4rt();
     RegistrerBridge.registerBridge(_interpreter!);
 
-    final code = _sourceCode.replaceAll('Client(source)', 'Client()');
+    // Client(source) is now supported directly (the bridge reads the source's
+    // baseUrl for relative-URL resolution), so no rewrite is needed.
+    final code = _sourceCode;
     if (code.trim().isEmpty) {
       // An empty program has no `main`, which d4rt reports as the confusing
       // "Undefined variable: main". Say what actually happened.
@@ -94,19 +98,60 @@ class DartExtensionService implements ExtensionService {
     if (_initError != null) throw Exception(_initError);
   }
 
+  // Sources may read a stored preference synchronously while building their
+  // first request, so the async pref store must be pulled into the sync cache
+  // before any source method runs. Done once per service.
+  bool _prefsLoaded = false;
+  Future<void> _ensurePrefs() async {
+    if (_prefsLoaded) return;
+    _prefsLoaded = true;
+    try {
+      final store = await SharedPreferences.getInstance();
+      final prefix = 'source_pref_${_mSource.id}_';
+      final vals = <String, String>{};
+      for (final k in store.getKeys()) {
+        if (k.startsWith(prefix)) {
+          final v = store.get(k);
+          if (v != null) vals[k.substring(prefix.length)] = '$v';
+        }
+      }
+      // Many Mangayomi-format sources derive their base URL from a preference
+      // (`baseUrl => getPreferenceValue(id, "override_baseurl")`) whose default
+      // IS the site URL. Unset, that returns empty and every request becomes a
+      // relative path with no base. Seed the common override keys with the
+      // source's baseUrl so those sources build absolute URLs out of the box;
+      // a user-set override still wins (it's already in the store above).
+      for (final key in const [
+        'override_baseurl',
+        'overrideBaseUrl',
+        'preferred_domain',
+        'domain',
+      ]) {
+        vals.putIfAbsent(key, () => _mSource.baseUrl);
+      }
+      SourcePrefCache.put(_mSource.id, vals);
+    } catch (_) {
+      // No prefs / store unavailable — sources fall back to their defaults.
+    }
+  }
+
   @override
   Future<MPages> getPopular(int page) async {
     _checkReady();
+    await _ensurePrefs();
     return await _interpreter!.invoke('getPopular', [page]) as MPages;
   }
 
   @override
-  Future<MPages> getLatestUpdates(int page) async =>
-      await _interpreter!.invoke('getLatestUpdates', [page]) as MPages;
+  Future<MPages> getLatestUpdates(int page) async {
+    await _ensurePrefs();
+    return await _interpreter!.invoke('getLatestUpdates', [page]) as MPages;
+  }
 
   @override
   Future<MPages> search(
       String query, int page, List<dynamic> filters) async {
+    await _ensurePrefs();
     return await _interpreter!.invoke('search', [
       query,
       page,
@@ -115,11 +160,14 @@ class DartExtensionService implements ExtensionService {
   }
 
   @override
-  Future<MManga> getDetail(String url) async =>
-      await _interpreter!.invoke('getDetail', [url]) as MManga;
+  Future<MManga> getDetail(String url) async {
+    await _ensurePrefs();
+    return await _interpreter!.invoke('getDetail', [url]) as MManga;
+  }
 
   @override
   Future<List<PageUrl>> getPageList(String url) async {
+    await _ensurePrefs();
     final result =
         await _interpreter!.invoke('getPageList', [url]) as List;
 

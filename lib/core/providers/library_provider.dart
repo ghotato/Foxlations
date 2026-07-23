@@ -117,6 +117,12 @@ class LibraryProvider extends ChangeNotifier {
     return _libraryService.isChapterRead(sourceId, chapterUrl);
   }
 
+  Future<void> markChapterUnread(
+      String sourceId, String mangaUrl, String chapterUrl) async {
+    await _libraryService.markChapterUnread(sourceId, mangaUrl, chapterUrl);
+    notifyListeners();
+  }
+
   // ── Chapter cache ─────────────────────────────────────────
   Future<void> cacheChapters(String sourceId, String mangaUrl, List<Map<String, dynamic>> chapters) async {
     final libChapters = chapters.map((c) => LibraryChapter(

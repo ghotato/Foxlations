@@ -585,6 +585,9 @@ class _LibraryScreenState extends State<LibraryScreen>
     if (selected.isEmpty) return;
     _exitSelectMode();
 
+    // Fresh queue — clear any prefetch cache left over from a previous batch.
+    MigrateScreen.resetSearchCache();
+
     for (var i = 0; i < selected.length; i++) {
       if (!mounted) return;
       final m = selected[i];
@@ -598,6 +601,11 @@ class _LibraryScreenState extends State<LibraryScreen>
             // Shown in the app bar so it's clear where you are in the queue.
             queuePosition: i + 1,
             queueTotal: selected.length,
+            // Prefetch the next entry's search while this one is on screen, so
+            // the following screen opens with results already loaded.
+            nextQuery: i + 1 < selected.length ? selected[i + 1].title : null,
+            nextSourceId:
+                i + 1 < selected.length ? selected[i + 1].sourceId : null,
           ),
         ),
       );

@@ -239,6 +239,27 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Long-pressing a chapter now opens a menu — Bookmark, '
+                'Mark all below as read, Mark chapter as read or unread, and '
+                'Download — instead of only toggling a bookmark.'),
+            _ChangelogItem('A title\'s three-dots menu now has the full set of '
+                'actions: Edit categories, Notes, Migrate, Refresh, Select '
+                'chapters, Remove from library, and Open in browser.'),
+            _ChangelogItem('"Select chapters" turns the chapter list into a '
+                'multi-select. Tap to pick chapters, then use the bottom bar to '
+                'bookmark, mark all below as read, mark read or unread, or '
+                'download the whole selection at once.'),
+            _ChangelogItem('Titles can hold a note now. Add one from the '
+                'three-dots "Notes" menu — it shows as a card under the '
+                'description and taps to edit.'),
+            _ChangelogItem('Migration can carry your tracking across. A new '
+                '"Tracking" toggle re-binds the entry\'s MAL / AniList / Kitsu '
+                'links to the new source so it keeps syncing.'),
+            _ChangelogItem('Bulk migration is smoother. While you pick a target '
+                'for one entry, the next entry\'s search runs in the background, '
+                'so the following screen opens with results already loaded. '
+                'Results also fill in as each source answers, and one stuck '
+                'source can no longer stall the whole batch.'),
             _ChangelogItem('Fixed a grey box on the reading-stats screen. A top '
                 'series with a shortened link — common for entries brought in '
                 'from another app — was crashing the "Most-Read Series" card, '

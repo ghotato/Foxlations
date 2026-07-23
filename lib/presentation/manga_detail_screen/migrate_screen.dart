@@ -6,6 +6,7 @@ import '../../core/models/installed_source_model.dart';
 import '../../core/utils/search_filter.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/library_provider.dart';
+import '../../core/providers/tracking_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../core/services/download_service.dart';
 import '../../eval/lib.dart';
@@ -25,6 +26,13 @@ class MigrateScreen extends StatefulWidget {
   final int? queuePosition;
   final int? queueTotal;
 
+  /// Title and source of the NEXT entry in a bulk-migrate queue. When set, this
+  /// screen searches for it in the background while the user picks the current
+  /// target, so the next screen opens with results already loaded. The source
+  /// is needed so the prefetch excludes the right entry's own source.
+  final String? nextQuery;
+  final String? nextSourceId;
+
   const MigrateScreen({
     super.key,
     required this.sourceId,
@@ -32,10 +40,16 @@ class MigrateScreen extends StatefulWidget {
     required this.mangaTitle,
     this.queuePosition,
     this.queueTotal,
+    this.nextQuery,
+    this.nextSourceId,
   });
 
   @override
   State<MigrateScreen> createState() => _MigrateScreenState();
+
+  /// Drop any prefetched search results. Called at the start of a new bulk
+  /// migration so a fresh queue never shows stale hits from a previous run.
+  static void resetSearchCache() => _MigrateScreenState._searchCache.clear();
 }
 
 class _MigrateScreenState extends State<MigrateScreen> {
@@ -44,11 +58,16 @@ class _MigrateScreenState extends State<MigrateScreen> {
   // sourceId -> list of results
   Map<String, List<_SearchResult>> _results = {};
 
+  // Cross-screen cache so a bulk migration doesn't re-run the same all-sources
+  // search when the next entry opens — the previous screen prefetches into it.
+  static final Map<String, Map<String, List<_SearchResult>>> _searchCache = {};
+  static String _norm(String q) => q.trim().toLowerCase();
+
   @override
   void initState() {
     super.initState();
     _searchController.text = widget.mangaTitle;
-    _search();
+    _search(useCache: true);
   }
 
   @override
@@ -57,51 +76,93 @@ class _MigrateScreenState extends State<MigrateScreen> {
     super.dispose();
   }
 
-  Future<void> _search() async {
+  Future<void> _search({bool useCache = false}) async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
 
+    // Prefetched by the previous entry in the queue — show instantly.
+    if (useCache) {
+      final cached = _searchCache[_norm(query)];
+      if (cached != null && cached.isNotEmpty) {
+        setState(() { _results = cached; _searching = false; });
+        _prefetchNext();
+        return;
+      }
+    }
+
     setState(() { _searching = true; _results = {}; });
 
+    final gathered = await _runSearch(query, excludeSourceId: widget.sourceId,
+        into: (id, list) {
+      if (!mounted) return;
+      setState(() => _results[id] = list);
+    });
+
+    _searchCache[_norm(query)] = gathered;
+    if (mounted) setState(() => _searching = false);
+    _prefetchNext();
+  }
+
+  /// Warm the cache for the next queue entry while the user reviews this one,
+  /// so the next screen doesn't spin. Skipped if already cached.
+  void _prefetchNext() {
+    final next = widget.nextQuery?.trim();
+    if (next == null || next.isEmpty) return;
+    if (_searchCache.containsKey(_norm(next))) return;
+    // Reserve the key so a second prefetch doesn't duplicate the work.
+    _searchCache[_norm(next)] = {};
+    _runSearch(next, excludeSourceId: widget.nextSourceId ?? widget.sourceId)
+        .then((res) => _searchCache[_norm(next)] = res);
+  }
+
+  /// Runs the all-sources search for [query], excluding [excludeSourceId] (the
+  /// entry's own source can't be a migration target). [into] (optional)
+  /// receives each source's results as they arrive for live display. Returns
+  /// the full map.
+  Future<Map<String, List<_SearchResult>>> _runSearch(
+    String query, {
+    required String excludeSourceId,
+    void Function(String sourceId, List<_SearchResult> results)? into,
+  }) async {
     final sourceProvider = context.read<SourceProvider>();
     final vaultProvider = context.read<VaultProvider>();
     final sources = sourceProvider.installedSources
-        .where((s) => s.source.id != widget.sourceId) // exclude current source
+        .where((s) => s.source.id != excludeSourceId) // exclude entry's source
         .where((s) => !vaultProvider.isSourceInVault(s.source.id)) // hide vault sources
         .toList();
 
-    // Search each source in parallel
-    final futures = <Future>[];
-    for (final source in sources) {
-      futures.add(_searchSource(source, query));
-    }
-    await Future.wait(futures);
-
-    if (mounted) setState(() => _searching = false);
+    final out = <String, List<_SearchResult>>{};
+    await Future.wait(sources.map((source) async {
+      final list = await _searchSource(source, query);
+      if (list.isNotEmpty) {
+        out[source.source.id] = list;
+        into?.call(source.source.id, list);
+      }
+    }));
+    return out;
   }
 
-  Future<void> _searchSource(InstalledSource installed, String query) async {
+  Future<List<_SearchResult>> _searchSource(
+      InstalledSource installed, String query) async {
     try {
       final result = await withExtensionService(
         installed.source, installed.sourceCode,
         (service) => service.search(query, 1, []),
-      );
+        // One slow/hanging source shouldn't stall the whole batch.
+      ).timeout(const Duration(seconds: 15));
       final matched = filterSearchResults(result.list, query);
-      if (matched.isNotEmpty && mounted) {
-        setState(() {
-          _results[installed.source.id] = matched.take(5).map((m) =>
-            _SearchResult(
-              name: m.name ?? query,
-              url: m.link ?? '',
-              coverUrl: m.imageUrl ?? '',
-              sourceId: installed.source.id,
-              sourceName: installed.source.name,
-            ),
-          ).toList();
-        });
-      }
+      return matched.take(5).map((m) =>
+        _SearchResult(
+          name: m.name ?? query,
+          url: m.link ?? '',
+          coverUrl: m.imageUrl ?? '',
+          sourceId: installed.source.id,
+          sourceName: installed.source.name,
+        ),
+      ).toList();
     } catch (e) {
-      // Source search failed — skip silently
+      // Source search failed or timed out — skip silently.
+      return const [];
     }
   }
 
@@ -218,6 +279,23 @@ class _MigrateScreenState extends State<MigrateScreen> {
       // Chapter matching failed — manga is still migrated, just without read state
     }
 
+    // Carry tracker bindings (MAL / AniList / Kitsu) across to the new entry so
+    // it keeps auto-syncing. On a copy the original stays, so leave its
+    // bindings; on a migrate the original is gone, so move them.
+    if (opts.tracking && mounted) {
+      try {
+        await context.read<TrackingProvider>().copyBindings(
+              fromSourceId: widget.sourceId,
+              fromUrl: widget.mangaUrl,
+              toSourceId: target.sourceId,
+              toUrl: target.url,
+              removeOld: !isCopy,
+            );
+      } catch (_) {
+        // Tracking carry-over is best-effort — never block the migration on it.
+      }
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(isCopy
@@ -311,13 +389,20 @@ class _MigrateScreenState extends State<MigrateScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Results
+        // Thin progress line while sources are still being searched — the
+        // results below fill in as each source returns, so there's no blank
+        // full-screen wait.
         if (_searching)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else
-          Expanded(
+          LinearProgressIndicator(
+              minHeight: 2,
+              color: cs.primary,
+              backgroundColor: cs.surfaceContainerHighest),
+
+        // Results
+        Expanded(
             child: _results.isEmpty
-                ? Center(child: Text('No results found',
+                ? Center(child: Text(
+                    _searching ? 'Searching sources…' : 'No results found',
                     style: GoogleFonts.manrope(fontSize: 14, color: cs.outline)))
                 : ListView(
                     padding: const EdgeInsets.only(bottom: 32),

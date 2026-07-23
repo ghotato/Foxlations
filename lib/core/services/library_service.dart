@@ -219,6 +219,17 @@ class LibraryService {
     return _chapterBox?.get(key)?.isRead ?? false;
   }
 
+  Future<void> markChapterUnread(
+      String sourceId, String mangaUrl, String chapterUrl) async {
+    final key = '${sourceId}_$chapterUrl';
+    final chapter = _chapterBox?.get(key);
+    if (chapter != null) {
+      chapter.isRead = false;
+      chapter.readAt = null;
+      await chapter.save();
+    }
+  }
+
   Future<void> markAllChaptersRead(String sourceId, String mangaUrl) async {
     final manga = getManga(sourceId, mangaUrl);
     if (manga != null) {

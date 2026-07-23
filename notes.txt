@@ -1,9 +1,25 @@
-Fixes a crash that left a grey box on the reading-stats screen.
+Chapter actions, bulk chapter selection, per-title notes, and faster bulk
+migration.
+
+Reading
+- Long-pressing a chapter now opens a menu instead of only toggling a bookmark:
+  Bookmark, Mark all below as read, Mark chapter as read/unread, and Download.
+- The three-dots menu on a title now has Edit categories, Notes, Migrate,
+  Refresh, Select chapters, Remove from library, and Open in browser — the full
+  set, in a sensible order.
+- "Select chapters" turns the chapter list into a multi-select: tap to pick
+  chapters and use the bar at the bottom to bookmark, mark all below as read,
+  mark read, mark unread, or download the whole selection at once.
 
 Library
-- The reading-stats screen no longer shows a grey box where the "Most-Read
-  Series" card should be. One of your top series having a shortened link — which
-  happens with entries brought over from another app — crashed that card, and a
-  crash renders as a blank grey box rather than an error. The same faulty
-  handling was fixed in one other place, so a source with an unusual address
-  can't trip it either.
+- Titles can hold a note now. Add one from the three-dots "Notes" menu; it shows
+  as a card under the description and is tappable to edit.
+
+Migration
+- Migrating can now carry your tracking over. A new "Tracking" toggle re-binds
+  the entry's MAL / AniList / Kitsu links to the new source so it keeps syncing.
+- Bulk migration is smoother. While you pick a target for one entry, the next
+  one's search runs in the background, so the following screen opens with
+  results already loaded instead of spinning. Results also fill in as each
+  source answers rather than waiting for the slowest one, and a single stuck
+  source can no longer stall the whole batch.
