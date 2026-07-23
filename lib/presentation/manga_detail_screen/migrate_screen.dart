@@ -310,7 +310,9 @@ class _MigrateScreenState extends State<MigrateScreen> {
               ? 'Copied to ${target.sourceName}'
               : 'Migrated to ${target.sourceName}'),
           duration: const Duration(seconds: 2)));
-      Navigator.pop(context); // pop this MigrateScreen
+      // Return `true` so a bulk queue knows this entry finished (vs. Back,
+      // which pops with null and cancels the batch).
+      Navigator.pop(context, true); // pop this MigrateScreen
       // A single migration is launched on top of the manga's detail screen, and
       // a migrate (not copy) leaves that detail screen pointing at a now-removed
       // entry — so pop it too. In a bulk run MigrateScreen sits directly on the

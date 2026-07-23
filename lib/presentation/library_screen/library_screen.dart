@@ -591,7 +591,9 @@ class _LibraryScreenState extends State<LibraryScreen>
     for (var i = 0; i < selected.length; i++) {
       if (!mounted) return;
       final m = selected[i];
-      await Navigator.push(
+      // MigrateScreen returns `true` when it finished an entry (migrate/copy)
+      // and `null` when the user pressed Back — Back cancels the whole queue.
+      final done = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (_) => MigrateScreen(
@@ -609,6 +611,20 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
         ),
       );
+      if (done != true) break; // backed out — stop the batch
+
+      // A short loading buffer between entries so the hand-off from one migrate
+      // screen to the next reads as a deliberate transition, not a flash.
+      if (i + 1 < selected.length && mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          barrierColor: Colors.black54,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) Navigator.pop(context); // dismiss the buffer
+      }
     }
   }
 

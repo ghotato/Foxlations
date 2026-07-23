@@ -239,6 +239,14 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Bulk migration is more reliable: fixed a black screen '
+                'that could appear after migrating an entry, added a short '
+                'loading pause so the hand-off to the next entry isn\'t jarring, '
+                'and pressing Back now cancels the rest of the batch instead of '
+                'jumping to the next one.'),
+            _ChangelogItem('RepoForge is now clearly marked as beta — it won\'t '
+                'always generate a correct source, so check what it produces and '
+                'tweak the selectors if a site doesn\'t come out right.'),
             _ChangelogItem('Long-pressing a chapter now opens a menu — Bookmark, '
                 'Mark all below as read, Mark chapter as read or unread, and '
                 'Download — instead of only toggling a bookmark.'),

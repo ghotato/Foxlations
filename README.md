@@ -2,8 +2,11 @@
 
 A manga, manhwa, light‑novel and video reader for Android and iOS with an
 extension‑based source system. Add sources from any site with the built‑in
-**RepoForge** generator, sync progress to AniList / MyAnimeList / Kitsu, back up
-and restore your library, and read behind Cloudflare‑protected sites.
+**RepoForge** generator *(beta)*, sync progress to AniList / MyAnimeList / Kitsu,
+back up and restore your library, and read behind Cloudflare‑protected sites.
+
+> **RepoForge is in beta.** It won't always generate a correct source — check
+> what it produces and adjust the selectors if a site doesn't come out right.
 
 > Foxlations is a reader only. It does not host any content — you add your own
 > sources.

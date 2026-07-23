@@ -218,11 +218,28 @@ class _RepoForgeHubScreenState extends State<RepoForgeHubScreen> {
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: cs.onSurface)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: cs.primary.withAlpha(38),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: cs.primary.withAlpha(120)),
+              ),
+              child: Text('BETA',
+                  style: GoogleFonts.manrope(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: cs.primary)),
+            ),
           ]),
           const SizedBox(height: 8),
           Text(
             'Detect a site’s framework, tune selectors, and install a working '
-            'manga / anime / novel source — no server, all on-device.',
+            'manga / anime / novel source — no server, all on-device. RepoForge '
+            'is in beta, so it won’t always get a source right — check the '
+            'result and tweak the selectors if a site doesn’t come out correct.',
             style: GoogleFonts.manrope(
                 fontSize: 12.5, height: 1.4, color: cs.onSurfaceVariant),
           ),

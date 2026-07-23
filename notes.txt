@@ -23,3 +23,12 @@ Migration
   results already loaded instead of spinning. Results also fill in as each
   source answers rather than waiting for the slowest one, and a single stuck
   source can no longer stall the whole batch.
+- Bulk migration is also more reliable: fixed a black screen that could appear
+  after migrating one entry, added a short loading pause so the hand-off to the
+  next entry isn't jarring, and pressing Back now cancels the rest of the batch
+  instead of jumping to the next one.
+
+Sources
+- RepoForge is now clearly marked as beta, in the app and on the site — it won't
+  always generate a correct source, so check what it produces and tweak the
+  selectors if a site doesn't come out right.
