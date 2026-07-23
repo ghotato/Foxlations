@@ -1,8 +1,14 @@
-A small follow-up to the last release, fixing search in sources built with
-RepoForge.
+RepoForge recognises more site layouts, so generated sources pick up the right
+things on more sites.
 
 RepoForge
-- Search now works in generated sources for sites that lay out their results
-  page differently from their browse page. Only the browse layout was being
-  recognised, so a generated source could list titles perfectly and then return
-  nothing at all for every search. Webtoons was the clearest example.
+- Five more site layouts are now understood properly: MadTheme, WPComics,
+  ZeistManga, FMReader and nhentai-style galleries. These were already being
+  identified by name, but nothing was known about how they arrange their pages,
+  so a generated source fell back to generic guesses — usually finding nothing,
+  and occasionally picking up an advert instead of a title. Each now has its own
+  list, title, cover, chapter and page layouts.
+- Search now works in generated sources for sites whose results page is laid out
+  differently from their browse page. Only the browse layout was recognised, so
+  a source could list titles perfectly and then find nothing at all for every
+  search.

@@ -1486,6 +1486,15 @@ class FrameworkDetectorService {
     // lives on `h3 a` rather than the card's first anchor (that one is the
     // cover link and has no text).
     'MangaBox': {'item': '.panel_story_list .story_item, div.list-truyen-item-wrap, div.list-comic-item-wrap', 'title': 'h3 a', 'cover': 'img', 'chapters': '.chapter-list .row, ul.row-content-chapter li', 'page_images': 'div.container-chapter-reader > img', 'detailTitle': 'div.manga-info-top h1, div.panel-story-info h1'},
+    // These frameworks were detected but had no listing selectors, so generated
+    // sources fell through to the generic defaults and matched whatever
+    // happened to fit — usually nothing, occasionally an advert. Values below
+    // describe each theme's own markup.
+    'MadTheme': {'item': '.book-detailed-item, .book-item', 'title': '.title a, h3 a', 'cover': 'img', 'chapters': '#chapter-list > li', 'page_images': '#chapter-images img, .chapter-image img'},
+    'WPComics': {'item': 'div.items div.item', 'title': 'h3 a, .title a', 'cover': 'img', 'chapters': 'div.list-chapter li.row:not(.heading)', 'page_images': 'div.page-chapter > img, li.blocks-gallery-item img'},
+    'ZeistManga': {'item': 'div.PopularPosts div.grid > figure', 'title': 'figcaption > a', 'cover': 'img', 'chapters': '#latest a, .chapter-list a', 'page_images': 'div.check-box div.separator img, div.separator img'},
+    'FMReader': {'item': 'div.media, .thumb-item-flow', 'title': 'h3 a, .series-title a', 'cover': 'img', 'chapters': 'div#list-chapters p, table.table tr, .list-chapters > a', 'page_images': '.chapter-content img, #reading img'},
+    'GalleryAdults (nhentai-style)': {'item': 'div.thumb', 'title': '.caption, h3', 'cover': 'img', 'page_images': '.gallery_thumb img, #image-container img'},
     // Webtoons serves DIFFERENT markup per User-Agent, so selectors must match
     // both or they break on one. Mobile cards are `a.link._titleItem`, desktop
     // ones `a.link._ranking_title_a` — hence the bare `a.link`, which matches

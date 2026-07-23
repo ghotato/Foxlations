@@ -239,6 +239,12 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('RepoForge understands five more site layouts — '
+                'MadTheme, WPComics, ZeistManga, FMReader and nhentai-style '
+                'galleries. They were already recognised by name, but nothing '
+                'was known about how they arrange their pages, so a generated '
+                'source fell back to generic guesses: usually finding nothing, '
+                'occasionally picking up an advert instead of a title.'),
             _ChangelogItem('RepoForge: search now works in generated sources '
                 'for sites whose results page is laid out differently from '
                 'their browse page. Only the browse layout was recognised, so '
