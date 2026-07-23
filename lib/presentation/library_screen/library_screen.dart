@@ -491,61 +491,78 @@ class _LibraryScreenState extends State<LibraryScreen>
 
     showModalBottomSheet(
       context: context,
+      // Grow past the half-screen cap and bound the height so a long category
+      // list scrolls while Save stays reachable.
+      isScrollControlled: true,
       backgroundColor: cs.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(width: 36, height: 4,
-                  decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              Text('Move to Category',
-                  style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
-              const SizedBox(height: 12),
-              ...catNames.map((cat) {
-                final isIn = selected.contains(cat);
-                return InkWell(
-                  onTap: () => setSheetState(() {
-                    if (isIn) { selected.remove(cat); } else { selected.add(cat); }
-                  }),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                    child: Row(children: [
-                      Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                          size: 20, color: isIn ? cs.primary : cs.outline),
-                      const SizedBox(width: 14),
-                      Text(cat, style: GoogleFonts.manrope(
-                          fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-                    ]),
+        builder: (ctx, setSheetState) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 36, height: 4,
+                      decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(height: 16),
+                  Text('Move to Category',
+                      style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        ...catNames.map((cat) {
+                          final isIn = selected.contains(cat);
+                          return InkWell(
+                            onTap: () => setSheetState(() {
+                              if (isIn) { selected.remove(cat); } else { selected.add(cat); }
+                            }),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                              child: Row(children: [
+                                Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                                    size: 20, color: isIn ? cs.primary : cs.outline),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Text(cat, style: GoogleFonts.manrope(
+                                      fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                                ),
+                              ]),
+                            ),
+                          );
+                        }),
+                      ]),
+                    ),
                   ),
-                );
-              }),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    for (final m in mangaList) {
-                      _doSetCategories(m, selected.toList());
-                    }
-                    if (_isSelectMode) _exitSelectMode();
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        for (final m in mangaList) {
+                          _doSetCategories(m, selected.toList());
+                        }
+                        if (_isSelectMode) _exitSelectMode();
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text('Save', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
+                    ),
                   ),
-                  child: Text('Save', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

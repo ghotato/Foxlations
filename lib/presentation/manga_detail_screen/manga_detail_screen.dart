@@ -1319,49 +1319,66 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
     showModalBottomSheet(
       context: context,
+      // Grow past the half-screen cap and bound the height so a long category
+      // list scrolls while the confirm button stays reachable.
+      isScrollControlled: true,
       backgroundColor: cs.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 36, height: 4,
-                decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            Text('Add to Category',
-                style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
-            const SizedBox(height: 12),
-            ...categories.map((cat) {
-              final isIn = selected.contains(cat);
-              return InkWell(
-                onTap: () => setSheetState(() {
-                  isIn ? selected.remove(cat) : selected.add(cat);
-                }),
-                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Row(children: [
-                    Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                        size: 20, color: isIn ? cs.primary : cs.outline),
-                    const SizedBox(width: 14),
-                    Text(cat, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-                  ]),
+        builder: (context, setSheetState) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 36, height: 4,
+                    decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 16),
+                Text('Add to Category',
+                    style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      ...categories.map((cat) {
+                        final isIn = selected.contains(cat);
+                        return InkWell(
+                          onTap: () => setSheetState(() {
+                            isIn ? selected.remove(cat) : selected.add(cat);
+                          }),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            child: Row(children: [
+                              Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                                  size: 20, color: isIn ? cs.primary : cs.outline),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(cat, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                              ),
+                            ]),
+                          ),
+                        );
+                      }),
+                    ]),
+                  ),
                 ),
-              );
-            }),
-            const SizedBox(height: 16),
-            SizedBox(width: double.infinity, child: FilledButton(
-              onPressed: () { Navigator.pop(context); onConfirm(selected.toList()); },
-              style: FilledButton.styleFrom(
-                backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
-                padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: Text(selected.isEmpty ? 'Add without Category' : 'Add to Library',
-                  style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
-            )),
-          ]),
+                const SizedBox(height: 16),
+                SizedBox(width: double.infinity, child: FilledButton(
+                  onPressed: () { Navigator.pop(context); onConfirm(selected.toList()); },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: Text(selected.isEmpty ? 'Add without Category' : 'Add to Library',
+                      style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
+                )),
+              ]),
+            ),
+          ),
         ),
       ),
     );
@@ -1386,53 +1403,71 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
 
     showModalBottomSheet(
       context: context,
+      // Let the sheet grow past the default half-screen cap, and bound it so a
+      // long category list scrolls while the Save button stays pinned.
+      isScrollControlled: true,
       backgroundColor: cs.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 36, height: 4,
-                decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 16),
-            Text('Edit Categories',
-                style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
-            const SizedBox(height: 12),
-            ...catNames.map((cat) {
-              final isIn = selected.contains(cat);
-              return InkWell(
-                onTap: () => setSheetState(() { isIn ? selected.remove(cat) : selected.add(cat); }),
-                borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  child: Row(children: [
-                    Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
-                        size: 20, color: isIn ? cs.primary : cs.outline),
-                    const SizedBox(width: 14),
-                    Text(cat, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-                  ]),
+        builder: (context, setSheetState) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 36, height: 4,
+                    decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 16),
+                Text('Edit Categories',
+                    style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
+                const SizedBox(height: 12),
+                // Scrolls when there are more categories than fit.
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      ...catNames.map((cat) {
+                        final isIn = selected.contains(cat);
+                        return InkWell(
+                          onTap: () => setSheetState(() { isIn ? selected.remove(cat) : selected.add(cat); }),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                            child: Row(children: [
+                              Icon(isIn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                                  size: 20, color: isIn ? cs.primary : cs.outline),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(cat, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                              ),
+                            ]),
+                          ),
+                        );
+                      }),
+                    ]),
+                  ),
                 ),
-              );
-            }),
-            const SizedBox(height: 16),
-            SizedBox(width: double.infinity, child: FilledButton(
-              onPressed: () {
-                Navigator.pop(context);
-                if (isVault) {
-                  vault.setMangaCategories(widget.sourceId, widget.mangaUrl, selected.toList());
-                } else {
-                  library.setMangaCategories(widget.sourceId, widget.mangaUrl, selected.toList());
-                }
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
-                padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: Text('Save', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
-            )),
-          ]),
+                const SizedBox(height: 16),
+                SizedBox(width: double.infinity, child: FilledButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    if (isVault) {
+                      vault.setMangaCategories(widget.sourceId, widget.mangaUrl, selected.toList());
+                    } else {
+                      library.setMangaCategories(widget.sourceId, widget.mangaUrl, selected.toList());
+                    }
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: Text('Save', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
+                )),
+              ]),
+            ),
+          ),
         ),
       ),
     );
