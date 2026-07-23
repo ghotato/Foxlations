@@ -11,6 +11,7 @@ import 'm_video.dart';
 import 'filter.dart';
 import 'source_preference.dart';
 import 'webview.dart';
+import 'extractors.dart';
 
 class RegistrerBridge {
   static void registerBridge(D4rt interpreter) {
@@ -56,9 +57,22 @@ class RegistrerBridge {
       interpreter.registerBridgedClass(SourcePreferenceBridge.bridgedClass, lib);
       interpreter.registerBridgedClass(
           SourcePreferenceEntryBridge.bridgedClass, lib);
+      // m2k3a-style preference constructors used inside getSourcePreferences()
+      interpreter.registerBridgedClass(
+          EditTextPreferenceBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(ListPreferenceBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(
+          MultiSelectListPreferenceBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(
+          CheckBoxPreferenceBridge.bridgedClass, lib);
+      interpreter.registerBridgedClass(
+          SwitchPreferenceCompatBridge.bridgedClass, lib);
 
       // Top-level utility functions
       MProviderUtilities.register(interpreter, lib);
+
+      // Anime video-host extractors (doodExtractor, streamTapeExtractor, …)
+      ExtractorBridge.register(interpreter, lib);
     }
   }
 }

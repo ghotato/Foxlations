@@ -55,6 +55,10 @@ class MigrateScreen extends StatefulWidget {
 class _MigrateScreenState extends State<MigrateScreen> {
   final _searchController = TextEditingController();
   bool _searching = false;
+  // Set while a chosen target is being migrated (fetching the new source's
+  // chapters + copying read state) — the work runs on the UI isolate, so
+  // without this the screen just sits frozen and reads as a hang.
+  bool _migrating = false;
   // sourceId -> list of results
   Map<String, List<_SearchResult>> _results = {};
 
@@ -189,6 +193,9 @@ class _MigrateScreenState extends State<MigrateScreen> {
     final opts = choice.options;
     final isCopy = choice.action == MigrationAction.copy;
 
+    // Show a blocking progress overlay while the (UI-isolate) migration runs.
+    setState(() => _migrating = true);
+
     // Perform migration
     final libraryProvider = context.read<LibraryProvider>();
     final vaultProvider = context.read<VaultProvider>();
@@ -202,6 +209,7 @@ class _MigrateScreenState extends State<MigrateScreen> {
 
     if (oldManga == null) {
       if (mounted) {
+        setState(() => _migrating = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Manga not found in library')));
       }
@@ -302,10 +310,14 @@ class _MigrateScreenState extends State<MigrateScreen> {
               ? 'Copied to ${target.sourceName}'
               : 'Migrated to ${target.sourceName}'),
           duration: const Duration(seconds: 2)));
-      Navigator.pop(context); // back to detail
-      // A copy leaves the original entry valid, so only a migration invalidates
-      // the detail screen behind this one.
-      if (!isCopy) Navigator.pop(context);
+      Navigator.pop(context); // pop this MigrateScreen
+      // A single migration is launched on top of the manga's detail screen, and
+      // a migrate (not copy) leaves that detail screen pointing at a now-removed
+      // entry — so pop it too. In a bulk run MigrateScreen sits directly on the
+      // library (the queue re-pushes the next one), so that extra pop would tear
+      // the library off the stack and black-screen the app.
+      final isBulk = widget.queueTotal != null;
+      if (!isCopy && !isBulk) Navigator.pop(context);
     }
   }
 
@@ -351,7 +363,8 @@ class _MigrateScreenState extends State<MigrateScreen> {
           ],
         ),
       ),
-      body: Column(children: [
+      body: Stack(children: [
+        Column(children: [
         // Search bar
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -438,6 +451,25 @@ class _MigrateScreenState extends State<MigrateScreen> {
                       );
                     }).toList(),
                   ),
+          ),
+        ]),
+        if (_migrating)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black54,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text('Migrating…',
+                        style: TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
           ),
       ]),
     );

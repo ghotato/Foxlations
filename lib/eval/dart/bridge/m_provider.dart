@@ -17,13 +17,20 @@ import 'http.dart';
 /// awaiting. Keyed `<sourceId>::<key>` to match the on-disk
 /// `source_pref_<sourceId>_<key>` scheme the settings page writes.
 class SourcePrefCache {
-  static final Map<String, String> _values = {};
+  // Values are typed: a String for edit-text/list prefs, a List<String> for a
+  // multi-select (enabled-hosts) pref, a bool for a switch. getPreferenceValue
+  // returns them as-is so a source's `selection.contains(host)` gets a real
+  // list rather than an empty string.
+  static final Map<String, dynamic> _values = {};
 
-  static void put(int sourceId, Map<String, String> prefs) {
+  static void put(int sourceId, Map<String, dynamic> prefs) {
     prefs.forEach((k, v) => _values['$sourceId::$k'] = v);
   }
 
-  static String get(int sourceId, String key) => _values['$sourceId::$key'] ?? '';
+  /// Returns the stored value, or empty string when unset — sources treat a
+  /// missing string pref as "".
+  static dynamic get(int sourceId, String key) =>
+      _values['$sourceId::$key'] ?? '';
 }
 
 class MProviderBridge {

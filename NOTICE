@@ -15,3 +15,14 @@ limitations under the License.
 
 Foxlations is a reader application. It ships no content sources and hosts no
 content; sources are added by the user.
+
+--------------------------------------------------------------------------------
+
+This product includes software developed by the Mangayomi project
+(https://github.com/kodjodevf/mangayomi), licensed under the Apache License,
+Version 2.0.
+
+The anime video-host extractors under lib/eval/anime_extractors/ are Dart ports
+of Mangayomi's lib/services/anime_extractors/, and the bridge that exposes them
+(lib/eval/dart/bridge/extractors.dart) follows Mangayomi's own approach.
+Portions of the extension-runtime bridge are likewise derived from Mangayomi.

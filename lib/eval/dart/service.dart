@@ -9,6 +9,7 @@ import '../model/m_source.dart';
 import '../model/m_video.dart';
 import '../model/page_url.dart';
 import '../model/source_preference.dart';
+import '../model/preferences.dart';
 import '../interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/cookie_store.dart';
@@ -108,27 +109,40 @@ class DartExtensionService implements ExtensionService {
     try {
       final store = await SharedPreferences.getInstance();
       final prefix = 'source_pref_${_mSource.id}_';
-      final vals = <String, String>{};
+      final vals = <String, dynamic>{};
+      // 1) Stored user overrides win — load them first.
       for (final k in store.getKeys()) {
         if (k.startsWith(prefix)) {
           final v = store.get(k);
-          if (v != null) vals[k.substring(prefix.length)] = '$v';
+          if (v != null) vals[k.substring(prefix.length)] = v;
         }
       }
-      // Many Mangayomi-format sources derive their base URL from a preference
-      // (`baseUrl => getPreferenceValue(id, "override_baseurl")`) whose default
-      // IS the site URL. Unset, that returns empty and every request becomes a
-      // relative path with no base. Seed the common override keys with the
-      // source's baseUrl so those sources build absolute URLs out of the box;
-      // a user-set override still wins (it's already in the store above).
-      for (final key in const [
+      // 2) Point every base-URL override key at the index's baseUrl. Sources
+      // hardcode a default domain in their declared prefs, but those go stale
+      // (gogoanime alone has moved domains many times); the index is what we
+      // keep current, so seed it here where it out-ranks the declared default
+      // seeded in step 3.
+      for (final key in [
         'override_baseurl',
         'overrideBaseUrl',
         'preferred_domain',
         'domain',
+        // Aniyomi/keiyoushi-style sources suffix the key with the source id.
+        'override_baseurl_v${_mSource.id}',
       ]) {
         vals.putIfAbsent(key, () => _mSource.baseUrl);
       }
+      // 3) Seed the source's OWN declared defaults (preferred quality/server,
+      // the enabled-hosts multi-select, etc.) so getVideoList's host filtering
+      // and quality sorting work before the user ever opens settings. Guarded
+      // so a source without getSourcePreferences can't skip the cache write.
+      try {
+        for (final pref in getSourcePreferences()) {
+          if (pref.key.isNotEmpty && pref.defaultValue != null) {
+            vals.putIfAbsent(pref.key, () => pref.defaultValue);
+          }
+        }
+      } catch (_) {}
       SourcePrefCache.put(_mSource.id, vals);
     } catch (_) {
       // No prefs / store unavailable — sources fall back to their defaults.
@@ -268,10 +282,26 @@ class DartExtensionService implements ExtensionService {
   @override
   List<SourcePreference> getSourcePreferences() {
     try {
-      final result = _interpreter!.invoke('getSourcePreferences', []);
-      return (result as List).cast<SourcePreference>();
+      final result = _interpreter!.invoke('getSourcePreferences', []) as List;
+      return result
+          .map(_toSourcePreference)
+          .whereType<SourcePreference>()
+          .toList();
     } catch (_) {
       return const [];
     }
+  }
+
+  // Sources build their preferences as EditTextPreference / ListPreference /
+  // MultiSelectListPreference / CheckBox / Switch objects (m2k3a style); each
+  // knows how to collapse into a SourcePreference carrying its default.
+  static SourcePreference? _toSourcePreference(dynamic p) {
+    if (p is SourcePreference) return p;
+    if (p is EditTextPreference) return p.toPref();
+    if (p is ListPreference) return p.toPref();
+    if (p is MultiSelectListPreference) return p.toPref();
+    if (p is CheckBoxPreference) return p.toPref();
+    if (p is SwitchPreferenceCompat) return p.toPref();
+    return null;
   }
 }
