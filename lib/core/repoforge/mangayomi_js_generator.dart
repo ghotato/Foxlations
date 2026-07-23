@@ -247,10 +247,28 @@ class DefaultExtension extends MProvider {
 
   _text(el) { return el ? el.text.trim() : ""; }
 
+  // Covers are usually lazy-loaded, and sites disagree on which attribute holds
+  // the real URL — src is left as a placeholder (often a data: URI) until their
+  // script swaps it in. Trying only the detected attribute left cards blank
+  // wherever a site used a different one, so try the common set in order and
+  // skip any data: placeholder. srcset is taken as its first candidate.
   _img(el) {
     if (!el) return "";
-    const a = el.attr("__COVER_ATTR__");
-    return this._abs(a && a.length ? a : el.getSrc);
+    const attrs = ["__COVER_ATTR__", "data-src", "data-lazy-src",
+                   "data-original", "data-url", "data-image", "data-bg"];
+    for (const name of attrs) {
+      if (!name) continue;
+      const v = el.attr(name);
+      if (v && v.length && v.indexOf("data:") !== 0) return this._abs(v.trim());
+    }
+    const ss = el.attr("srcset");
+    if (ss && ss.length) {
+      const first = ss.split(",")[0].trim().split(" ")[0];
+      if (first && first.indexOf("data:") !== 0) return this._abs(first);
+    }
+    const s = el.getSrc;
+    if (s && s.length && s.indexOf("data:") !== 0) return this._abs(s);
+    return "";
   }
 
   // Multi-selector helpers: a role's selector is a comma-separated candidate
@@ -1210,9 +1228,18 @@ class DefaultExtension extends MProvider {
     for (const el of this._qa(doc, "__ITEM_SEL__")) {
       const a = this._q1(el, "__TITLE_SEL__");
       const img = this._q1(el, "__COVER_SEL__");
-      const name = a ? a.text.trim() : this._text(el.selectFirst("a"));
+      // Name, most reliable first: the title anchor's text, then its title
+      // attribute (cover-only anchors carry the name there), then the cover's
+      // alt text, then any anchor's text.
+      let name = a ? a.text.trim() : "";
+      if (!name && a) name = (a.attr("title") || "").trim();
+      if (!name && img) name = (img.attr("alt") || "").trim();
+      if (!name) name = this._text(el.selectFirst("a"));
       const link = a ? a.getHref : (el.selectFirst("a") ? el.selectFirst("a").getHref : "");
-      if (!link) continue;
+      // Require BOTH a link and a name. Ad slots injected into a grid match the
+      // card selector but supply only one, which is how an advert got listed as
+      // a manga next to a row of blank cards.
+      if (!link || !name) continue;
       list.push({ name: name, link: this._abs(link), imageUrl: this._img(img) });
     }
     const hasNextPage = "__NEXT_SEL__".length > 0
@@ -1316,9 +1343,18 @@ class DefaultExtension extends MProvider {
     for (const el of this._qa(doc, "__ITEM_SEL__")) {
       const a = this._q1(el, "__TITLE_SEL__");
       const img = this._q1(el, "__COVER_SEL__");
-      const name = a ? a.text.trim() : this._text(el.selectFirst("a"));
+      // Name, most reliable first: the title anchor's text, then its title
+      // attribute (cover-only anchors carry the name there), then the cover's
+      // alt text, then any anchor's text.
+      let name = a ? a.text.trim() : "";
+      if (!name && a) name = (a.attr("title") || "").trim();
+      if (!name && img) name = (img.attr("alt") || "").trim();
+      if (!name) name = this._text(el.selectFirst("a"));
       const link = a ? a.getHref : (el.selectFirst("a") ? el.selectFirst("a").getHref : "");
-      if (!link) continue;
+      // Require BOTH a link and a name. Ad slots injected into a grid match the
+      // card selector but supply only one, which is how an advert got listed as
+      // a manga next to a row of blank cards.
+      if (!link || !name) continue;
       list.push({ name: name, link: this._abs(link), imageUrl: this._img(img) });
     }
     const hasNextPage = "__NEXT_SEL__".length > 0

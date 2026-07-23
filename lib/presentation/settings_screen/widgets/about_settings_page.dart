@@ -239,6 +239,26 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Anime and light-novel sources from an added repo '
+                'now show up. Repos publish those in a separate list next to '
+                'the manga one, and the app only recognised one exact filename '
+                '— so if a repo named its list slightly differently, every '
+                'anime and novel source in it was invisible, with no error to '
+                'explain why.'),
+            _ChangelogItem('RepoForge: cover images resolve far more often. '
+                'Most sites load covers lazily and keep the real address in '
+                'one of several different attributes; only one was being read, '
+                'so generated sources showed rows of blank artwork whenever a '
+                'site used another.'),
+            _ChangelogItem('RepoForge: adverts are no longer listed as manga. '
+                'Ad slots dropped into a results grid look like a normal card, '
+                'and one was appearing as a title with a blank cover. An entry '
+                'now needs both a name and a link to be listed, and titles fall '
+                'back to the link\'s tooltip or the cover\'s description rather '
+                'than coming through blank.'),
+            _ChangelogItem('RepoForge: added the listing layout used by the '
+                'Manganato / Mangakakalot / Mangabat family, which had none — '
+                'generated sources for those sites now work first try.'),
             _ChangelogItem('New "Request desktop site" option in a source\'s '
                 'settings. Some sites send phones a cut-down page with the real '
                 'content missing, so the source finds nothing. Turn this on and '

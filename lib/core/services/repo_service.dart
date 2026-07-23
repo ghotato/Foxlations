@@ -141,24 +141,34 @@ class RepoService {
       final result = _parseIndex(data, repoUrl);
       final allSources = List<MangaSource>.from(result.sources);
 
-      // Mangayomi/keiyoushi repos split content across sibling index files
-      // (index.json = manga, anime_index.json, novel_index.json). Those indexes
-      // are top-level JSON arrays; the Foxlations format is a `{sources:[…]}`
-      // object with no siblings. So only chase siblings when we fetched a bare
-      // array over HTTP — pulling the anime/novel sources with the right type.
-      if (!_isLocalPath(repoUrl) && data is List) {
+      // Repos split content across sibling index files (index.json = manga,
+      // plus anime/novel siblings). This used to run only when the main index
+      // was a bare JSON array, on the assumption that the object-shaped
+      // Foxlations format never has siblings. That assumption was wrong:
+      // Foxtensions is object-shaped AND ships anime-index.min.json, so all of
+      // its anime sources were unreachable — the app never asked for the file.
+      // Shape tells us nothing about whether siblings exist, so always look.
+      if (!_isLocalPath(repoUrl)) {
         final base = _effectiveUrl(repoUrl);
+        final seen = allSources.map((s) => s.id).toSet();
         for (final kind in const ['anime', 'novel']) {
-          final sib = _siblingIndexUrl(base, kind);
-          if (sib == null) continue;
-          try {
-            final resp = await _dio.get<dynamic>(sib);
-            final parsed = _parseIndex(resp.data, sib, defaultType: kind);
-            allSources.addAll(parsed.sources);
-            await logger.info('Imported ${parsed.sources.length} $kind sources',
-                category: LogCategory.repo);
-          } catch (_) {
-            // Sibling index not present (e.g. Foxlations single-file repo) — fine.
+          for (final sib in siblingIndexUrls(base, kind)) {
+            try {
+              final resp = await _dio.get<dynamic>(sib);
+              final parsed = _parseIndex(resp.data, sib, defaultType: kind);
+              if (parsed.sources.isEmpty) continue;
+              // A repo may publish both spellings, and a source could already
+              // be listed in the main index — keep the first of each id.
+              final fresh =
+                  parsed.sources.where((s) => seen.add(s.id)).toList();
+              allSources.addAll(fresh);
+              await logger.info(
+                  'Imported ${fresh.length} $kind sources from $sib',
+                  category: LogCategory.repo);
+              break; // this kind resolved; don't try the other spelling
+            } catch (_) {
+              // Not present under this spelling — try the next, then give up.
+            }
           }
         }
       }
@@ -211,11 +221,29 @@ class RepoService {
   /// Given a manga `index.json` / `index.min.json` URL, return the sibling
   /// `{kind}_index(.min).json` URL in the same directory, or null if the input
   /// isn't a base manga index (so we don't chase siblings for typed/other files).
-  static String? _siblingIndexUrl(String url, String kind) {
+  /// Candidate URLs for a repo's `kind` (anime/novel) sibling index.
+  ///
+  /// Neither the separator nor the `.min` suffix is standardised, and a repo's
+  /// sibling need not match the spelling of its own main index — Foxtensions
+  /// serves `index.json` alongside `anime-index.min.json`. Only
+  /// `anime_index.json` was tried before, so those siblings were never found
+  /// and every source inside them was invisible to the app.
+  ///
+  /// So try the whole cross product, main index's own suffix first (the most
+  /// likely match), and stop at the first one that parses. Misses cost a 404.
+  @visibleForTesting
+  static List<String> siblingIndexUrls(String url, String kind) {
     final m = RegExp(r'^(.*/)index(\.min)?\.json(\?.*)?$', caseSensitive: false)
         .firstMatch(url);
-    if (m == null) return null;
-    return '${m.group(1)}${kind}_index${m.group(2) ?? ''}.json${m.group(3) ?? ''}';
+    if (m == null) return const [];
+    final dir = m.group(1)!;
+    final own = m.group(2) ?? ''; // '.min' when the main index is minified
+    final other = own.isEmpty ? '.min' : '';
+    final query = m.group(3) ?? '';
+    return [
+      for (final suffix in [own, other])
+        for (final sep in const ['_', '-']) '$dir$kind${sep}index$suffix.json$query',
+    ];
   }
 
   /// The content type implied by a Mangayomi-style index filename, so anime /

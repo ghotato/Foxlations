@@ -97,6 +97,10 @@ android/key.properties
 *.aab
 *.ipa
 
+# Native lib built locally so `flutter test` can drive rhttp (source harness).
+# Rebuilt from the rhttp crate on demand; never committed.
+*.so
+
 # ── Local planning docs — deliberately not published ──
 /ROADMAP.md
 /ClassicSource.json

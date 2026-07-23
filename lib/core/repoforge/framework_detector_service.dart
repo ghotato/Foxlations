@@ -1480,6 +1480,12 @@ class FrameworkDetectorService {
     'ZManga': {'item': 'div.flexbox2-item', 'title': 'div.flexbox2-title > span', 'cover': 'img', 'chapters': 'ul.series-chapterlist div.flexch-infoz a', 'page_images': 'div.reader-area img'},
     'Multi-Chan': {'item': 'div.content_row', 'cover': 'img#cover', 'chapters': 'table.table_cha tr:gt(1)', 'detailTitle': 'h1'},
     'Comici Viewer': {'item': 'div.series-list-item', 'title': 'div.series-list-item-h span', 'cover': 'img.series-list-item-img'},
+    // MangaBox (Manganato/Natomanga/Mangakakalot/Mangabat). Verified against
+    // the live sites: cards carry an `a[data-id]`, which is what separates a
+    // real entry from an ad slot injected into the same grid, and the name
+    // lives on `h3 a` rather than the card's first anchor (that one is the
+    // cover link and has no text).
+    'MangaBox': {'item': '.panel_story_list .story_item, div.list-truyen-item-wrap, div.list-comic-item-wrap', 'title': 'h3 a', 'cover': 'img', 'chapters': '.chapter-list .row, ul.row-content-chapter li', 'page_images': 'div.container-chapter-reader > img', 'detailTitle': 'div.manga-info-top h1, div.panel-story-info h1'},
     // Webtoons serves DIFFERENT markup per User-Agent, so selectors must match
     // both or they break on one. Mobile cards are `a.link._titleItem`, desktop
     // ones `a.link._ranking_title_a` — hence the bare `a.link`, which matches
