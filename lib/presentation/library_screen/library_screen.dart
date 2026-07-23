@@ -13,6 +13,7 @@ import '../../core/models/library_settings.dart';
 import '../../core/utils/library_query.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
+import '../manga_detail_screen/migrate_screen.dart';
 import '../widgets/update_prompt.dart';
 import './widgets/library_options_sheet.dart';
 import './widgets/library_stats_widget.dart';
@@ -571,6 +572,38 @@ class _LibraryScreenState extends State<LibraryScreen>
     _showMoveCategorySheet(_getSelectedManga());
   }
 
+  /// Bulk migrate: send each selected entry to the single-entry migrate screen
+  /// in turn.
+  ///
+  /// Deliberately sequential rather than "pick one target source and move
+  /// everything". Titles differ between sources — punctuation, romanisation,
+  /// season suffixes — so an automatic match would silently attach the wrong
+  /// series. Stepping through lets each candidate be confirmed (and previewed
+  /// with "Show entry") before anything is replaced.
+  Future<void> _batchMigrate() async {
+    final selected = _getSelectedManga();
+    if (selected.isEmpty) return;
+    _exitSelectMode();
+
+    for (var i = 0; i < selected.length; i++) {
+      if (!mounted) return;
+      final m = selected[i];
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MigrateScreen(
+            sourceId: m.sourceId,
+            mangaUrl: m.url,
+            mangaTitle: m.title,
+            // Shown in the app bar so it's clear where you are in the queue.
+            queuePosition: i + 1,
+            queueTotal: selected.length,
+          ),
+        ),
+      );
+    }
+  }
+
   int get _totalUnread {
     final manga = _activeManga(context);
     return manga.fold(0, (sum, m) => sum + (m.totalChapters - m.readChapters));
@@ -644,6 +677,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               _BatchButton(icon: Icons.drive_file_move_rounded, label: 'Move', onTap: _batchMoveCategory),
             _BatchButton(icon: Icons.done_all_rounded, label: 'Read', onTap: _batchMarkRead),
             _BatchButton(icon: Icons.remove_done_rounded, label: 'Unread', onTap: _batchMarkUnread),
+            _BatchButton(icon: Icons.swap_horiz_rounded, label: 'Migrate', onTap: _batchMigrate),
             _BatchButton(icon: Icons.delete_outline_rounded, label: 'Remove', onTap: _batchRemove),
           ],
         ),

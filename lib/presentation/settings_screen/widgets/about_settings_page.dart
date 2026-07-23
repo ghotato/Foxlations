@@ -239,6 +239,18 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Migrating an entry now asks what to carry over — '
+                'read progress, categories, and whether downloaded chapters are '
+                'deleted. A new "Show entry" button opens the candidate on the '
+                'other source first so you can check it has the full chapter '
+                'list before committing, and "Copy" keeps the original and adds '
+                'the other source alongside it.'),
+            _ChangelogItem('Migrate now works on a selection: hold to select '
+                'entries in your library and tap Migrate to step through them '
+                'one at a time, with a counter showing how far along you are. '
+                'It goes one by one deliberately — titles differ between '
+                'sources, so matching automatically would quietly attach the '
+                'wrong series.'),
             _ChangelogItem('Sources you build with RepoForge are now created in '
                 'the app\'s own format instead of JavaScript. The JavaScript '
                 'ones never worked — the part that fetches a page handed back '

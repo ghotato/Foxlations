@@ -1,13 +1,26 @@
-RepoForge now builds sources that actually work, plus two library fixes.
+Migration is much more useful, RepoForge now builds sources that actually work,
+plus two library fixes.
+
+Migrating
+- Before replacing an entry you can now choose what carries over — read
+  progress, categories, and whether downloaded chapters are deleted.
+- New "Show entry" button opens the candidate on the other source first, so you
+  can check it has the full chapter list before committing. Previously the only
+  way to find out was to migrate and see.
+- New "Copy" keeps the original and adds the other source alongside it, which is
+  useful when you want the same series from two places rather than moving it.
+- Migrate now works on a selection: hold to select entries in your library and
+  tap Migrate to step through them one at a time, with a counter showing how far
+  along you are. It walks entries individually on purpose — titles differ
+  between sources, so matching them automatically would quietly attach the wrong
+  series.
 
 RepoForge
 - Sources you build are now created in the app's own format instead of
   JavaScript. The JavaScript ones never worked: the part that fetches a page
   handed back a response with no content, so every source came up empty no
-  matter how well its selectors matched. Nothing about a generated source was
-  visibly wrong, which is why this took so long to pin down. They are now built
-  the same way the bundled sources are, and are tested against live sites before
-  release.
+  matter how well its selectors matched. They are now built the same way the
+  bundled sources are, and tested against live sites before release.
 - A site whose whole card is a single link no longer comes back empty. The
   generated code only looked for a link inside each card, so on sites where the
   card *is* the link it found none and quietly discarded every result.

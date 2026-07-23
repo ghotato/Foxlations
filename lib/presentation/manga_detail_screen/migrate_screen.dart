@@ -7,9 +7,12 @@ import '../../core/utils/search_filter.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/providers/vault_provider.dart';
+import '../../core/services/download_service.dart';
 import '../../eval/lib.dart';
+import '../../routes/app_routes.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/manga_image.dart';
+import 'widgets/migration_options_dialog.dart';
 
 /// Migration screen — search all sources for the same manga and transfer read progress.
 class MigrateScreen extends StatefulWidget {
@@ -17,11 +20,18 @@ class MigrateScreen extends StatefulWidget {
   final String mangaUrl;
   final String mangaTitle;
 
+  /// Position in a bulk-migrate queue, shown in the app bar so it's clear how
+  /// many entries are left. Null for a one-off migration.
+  final int? queuePosition;
+  final int? queueTotal;
+
   const MigrateScreen({
     super.key,
     required this.sourceId,
     required this.mangaUrl,
     required this.mangaTitle,
+    this.queuePosition,
+    this.queueTotal,
   });
 
   @override
@@ -96,33 +106,27 @@ class _MigrateScreenState extends State<MigrateScreen> {
   }
 
   Future<void> _migrate(_SearchResult target) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final cs = Theme.of(ctx).colorScheme;
-        return AlertDialog(
-          backgroundColor: cs.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusMedium)),
-          title: Text('Migrate to ${target.sourceName}?',
-              style: GoogleFonts.manrope(fontSize: 16, fontWeight: FontWeight.w700, color: cs.onSurface)),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(target.name, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-            const SizedBox(height: 8),
-            Text('This will:\n• Update the source to ${target.sourceName}\n• Transfer read progress by chapter number\n• Keep categories and bookmarks',
-                style: GoogleFonts.manrope(fontSize: 13, color: cs.outline, height: 1.5)),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Cancel', style: GoogleFonts.manrope(fontWeight: FontWeight.w600, color: cs.outline))),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true),
-                style: FilledButton.styleFrom(backgroundColor: cs.primary),
-                child: Text('Migrate', style: GoogleFonts.manrope(fontWeight: FontWeight.w700))),
-          ],
-        );
-      },
+    final choice = await showMigrationOptions(
+      context,
+      targetSourceName: target.sourceName,
+      targetTitle: target.name,
     );
+    if (choice == null || !mounted) return;
 
-    if (confirmed != true || !mounted) return;
+    // "Show entry" is a look, not a decision — open the candidate so its
+    // chapter list can be checked, then come back to the results.
+    if (choice.action == MigrationAction.showEntry) {
+      await Navigator.pushNamed(context, AppRoutes.mangaDetail, arguments: {
+        'mangaUrl': target.url,
+        'sourceId': target.sourceId,
+        'title': target.name,
+        'coverUrl': target.coverUrl,
+      });
+      return;
+    }
+
+    final opts = choice.options;
+    final isCopy = choice.action == MigrationAction.copy;
 
     // Perform migration
     final libraryProvider = context.read<LibraryProvider>();
@@ -143,20 +147,34 @@ class _MigrateScreenState extends State<MigrateScreen> {
       return;
     }
 
-    // Get old chapter read states
-    final oldCachedChapters = (provider as dynamic).getCachedChapters(widget.sourceId, widget.mangaUrl) as List;
+    // Read progress is matched by chapter NUMBER, since the two sources won't
+    // share chapter URLs. Skipped entirely when "Chapters" is unticked.
     final readChapterNumbers = <String, bool>{};
-    for (final ch in oldCachedChapters) {
-      if (libraryProvider.isChapterRead(widget.sourceId, ch.chapterUrl)) {
-        final num = _extractChapterNumber(ch.title);
-        if (num != null) readChapterNumbers[num] = true;
+    if (opts.chapters) {
+      final oldCachedChapters = (provider as dynamic)
+          .getCachedChapters(widget.sourceId, widget.mangaUrl) as List;
+      for (final ch in oldCachedChapters) {
+        if (libraryProvider.isChapterRead(widget.sourceId, ch.chapterUrl)) {
+          final num = _extractChapterNumber(ch.title);
+          if (num != null) readChapterNumbers[num] = true;
+        }
       }
     }
 
-    // Remove old entry
-    await (provider as dynamic).removeFromLibrary(widget.sourceId, widget.mangaUrl);
+    // Copy leaves the original in place; migrate replaces it.
+    if (!isCopy) {
+      if (opts.removeDownloads) {
+        try {
+          await DownloadService().deleteManga(widget.sourceId, oldManga.title,
+              isVault: isVault);
+        } catch (_) {
+          // Downloads may not exist — never block the migration on cleanup.
+        }
+      }
+      await (provider as dynamic)
+          .removeFromLibrary(widget.sourceId, widget.mangaUrl);
+    }
 
-    // Add new entry
     final newManga = LibraryManga(
       sourceId: target.sourceId,
       url: target.url,
@@ -166,13 +184,14 @@ class _MigrateScreenState extends State<MigrateScreen> {
       description: oldManga.description,
       genres: oldManga.genres,
       status: oldManga.status,
-      categories: oldManga.categories,
-      lastReadAt: oldManga.lastReadAt,
-      readChapters: oldManga.readChapters,
+      categories: opts.categories ? oldManga.categories : const <String>[],
+      lastReadAt: opts.chapters ? oldManga.lastReadAt : null,
+      readChapters: opts.chapters ? oldManga.readChapters : 0,
     );
     await (provider as dynamic).addToLibrary(newManga);
 
     // Fetch new chapters and match read state
+    if (!mounted) return;
     try {
       final sourceProvider = context.read<SourceProvider>();
       final installed = sourceProvider.getInstalledSource(target.sourceId);
@@ -200,10 +219,15 @@ class _MigrateScreenState extends State<MigrateScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Migrated to ${target.sourceName}'), duration: const Duration(seconds: 2)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(isCopy
+              ? 'Copied to ${target.sourceName}'
+              : 'Migrated to ${target.sourceName}'),
+          duration: const Duration(seconds: 2)));
       Navigator.pop(context); // back to detail
-      Navigator.pop(context); // back to library (old detail is stale)
+      // A copy leaves the original entry valid, so only a migration invalidates
+      // the detail screen behind this one.
+      if (!isCopy) Navigator.pop(context);
     }
   }
 
@@ -229,8 +253,25 @@ class _MigrateScreenState extends State<MigrateScreen> {
           icon: Icon(Icons.arrow_back_ios_new_rounded, color: cs.onSurface, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Migrate', style: GoogleFonts.manrope(
-            fontSize: 18, fontWeight: FontWeight.w700, color: cs.onSurface)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Migrate',
+                style: GoogleFonts.manrope(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: cs.onSurface)),
+            // Bulk migration walks entries one at a time; without this there's
+            // no way to tell how far through the queue you are.
+            if (widget.queueTotal != null && widget.queueTotal! > 1)
+              Text('${widget.queuePosition} of ${widget.queueTotal}',
+                  style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: cs.outline)),
+          ],
+        ),
       ),
       body: Column(children: [
         // Search bar
