@@ -239,6 +239,11 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('RepoForge: search now works in generated sources '
+                'for sites whose results page is laid out differently from '
+                'their browse page. Only the browse layout was recognised, so '
+                'a generated source could list titles perfectly and then find '
+                'nothing at all for every search.'),
             _ChangelogItem('Anime and light-novel sources from an added repo '
                 'now show up. Repos publish those in a separate list next to '
                 'the manga one, and the app only recognised one exact filename '

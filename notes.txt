@@ -1,23 +1,8 @@
-Anime and light-novel sources from external repos now actually appear, plus
-better source generation in RepoForge.
-
-Sources
-- Anime and light-novel sources from an added repo now show up. Repos publish
-  those in a separate list alongside the manga one, and the app was only ever
-  looking for one particular filename — so if a repo named its list even
-  slightly differently, every anime and novel source in it was invisible with
-  no error shown. It now recognises the naming variants in common use.
+A small follow-up to the last release, fixing search in sources built with
+RepoForge.
 
 RepoForge
-- Cover images resolve far more often. Most sites load covers lazily, keeping
-  the real address in one of several different attributes; only one was being
-  read, so generated sources came back with rows of blank artwork whenever a
-  site used another. It now tries each in turn.
-- Adverts are no longer listed as manga. Ad slots dropped into a results grid
-  look like a normal card, and one was being shown as a title with a blank
-  cover. Entries now need both a name and a link to be listed.
-- Titles are found more reliably: if the main link carries no text, the name is
-  taken from its tooltip or the cover's description instead of coming through
-  blank.
-- Added the listing layout used by the Manganato / Mangakakalot / Mangabat
-  family, which had none, so generated sources for those sites work first try.
+- Search now works in generated sources for sites that lay out their results
+  page differently from their browse page. Only the browse layout was being
+  recognised, so a generated source could list titles perfectly and then return
+  nothing at all for every search. Webtoons was the clearest example.

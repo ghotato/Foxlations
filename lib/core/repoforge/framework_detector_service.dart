@@ -1493,7 +1493,13 @@ class FrameworkDetectorService {
     // `chapters` only resolves under a DESKTOP agent (10 vs 0 episode rows):
     // the mobile page builds its episode list client-side. See the note on
     // Popular/Latest in _frameworkEndpoints.
-    'Webtoon (LINE/NAVER)': {'item': 'ul.webtoon_list li a.link', 'title': 'strong.title', 'cover': 'img', 'chapters': 'li._episodeItem a', 'detailTitle': "meta[property='og:title']", 'page_images': 'img._images'},
+    // The second item selector is the SEARCH results page, which uses entirely
+    // different markup from the browse grid — verified: the browse selector
+    // matches 30 cards while listing but 0 when searching, so a generated
+    // source browsed fine and returned nothing for every query. `_qa` tries
+    // each candidate in turn and keeps the first that matches, so listing both
+    // makes one source handle both pages.
+    'Webtoon (LINE/NAVER)': {'item': 'ul.webtoon_list li a.link, a[href*=title_no]', 'title': 'strong.title', 'cover': 'img', 'chapters': 'li._episodeItem a', 'detailTitle': "meta[property='og:title']", 'page_images': 'img._images'},
     'GoDa': {'item': '.container > .cardlist .pb-2 a', 'title': 'h3', 'cover': 'img', 'chapters': '.chapteritem', 'page_images': '#chapcontent > div > img'},
     'InitManga': {'item': 'div.manga-item-grid > div.uk-panel', 'title': 'h3 a', 'cover': 'img', 'chapters': 'div.chapter-item', 'page_images': 'div#chapter-content img[src]'},
     'MangaWork': {'item': "div.w-full.h-full", 'title': 'h1', 'cover': 'img', 'chapters': '#chapter_list li', 'page_images': 'div.reader-area img#imagech'},
