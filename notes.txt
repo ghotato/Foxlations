@@ -1,36 +1,9 @@
-Migration is much more useful, RepoForge now builds sources that actually work,
-plus two library fixes.
-
-Migrating
-- Before replacing an entry you can now choose what carries over — read
-  progress, categories, and whether downloaded chapters are deleted.
-- New "Show entry" button opens the candidate on the other source first, so you
-  can check it has the full chapter list before committing. Previously the only
-  way to find out was to migrate and see.
-- New "Copy" keeps the original and adds the other source alongside it, which is
-  useful when you want the same series from two places rather than moving it.
-- Migrate now works on a selection: hold to select entries in your library and
-  tap Migrate to step through them one at a time, with a counter showing how far
-  along you are. It walks entries individually on purpose — titles differ
-  between sources, so matching them automatically would quietly attach the wrong
-  series.
-
-RepoForge
-- Sources you build are now created in the app's own format instead of
-  JavaScript. The JavaScript ones never worked: the part that fetches a page
-  handed back a response with no content, so every source came up empty no
-  matter how well its selectors matched. They are now built the same way the
-  bundled sources are, and tested against live sites before release.
-- A site whose whole card is a single link no longer comes back empty. The
-  generated code only looked for a link inside each card, so on sites where the
-  card *is* the link it found none and quietly discarded every result.
+Fixes a crash that left a grey box on the reading-stats screen.
 
 Library
-- "Items per row" now actually goes to 6. The option offered up to six, but the
-  grid quietly capped at four on a phone, so choosing five or six changed the
-  number on screen and nothing else.
-- Scrolling the category strip is smooth again. Each chip was re-resolving its
-  font on every frame of a drag, which made the whole row stutter.
-
-Note: sources you built earlier with RepoForge were JavaScript and will still be
-empty. Rebuild them from the same site URL and they'll work.
+- The reading-stats screen no longer shows a grey box where the "Most-Read
+  Series" card should be. One of your top series having a shortened link — which
+  happens with entries brought over from another app — crashed that card, and a
+  crash renders as a blank grey box rather than an error. The same faulty
+  handling was fixed in one other place, so a source with an unusual address
+  can't trip it either.

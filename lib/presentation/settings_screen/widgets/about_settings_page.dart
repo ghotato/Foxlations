@@ -239,6 +239,11 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Fixed a grey box on the reading-stats screen. A top '
+                'series with a shortened link — common for entries brought in '
+                'from another app — was crashing the "Most-Read Series" card, '
+                'and a crash renders as a blank grey box. Guarded here and in '
+                'one other place with the same fault.'),
             _ChangelogItem('Migrating an entry now asks what to carry over — '
                 'read progress, categories, and whether downloaded chapters are '
                 'deleted. A new "Show entry" button opens the candidate on the '

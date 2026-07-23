@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:d4rt/d4rt.dart';
 import 'bridge/registrer.dart';
+import '../../core/utils/url_utils.dart';
 import '../model/filter.dart';
 import '../model/m_manga.dart';
 import '../model/m_pages.dart';
@@ -124,10 +125,10 @@ class DartExtensionService implements ExtensionService {
 
     // Merge source-level headers with per-page headers
     final sourceHeaders = getHeaders();
-    final parsedUrl = Uri.tryParse(url);
-    final referer = (parsedUrl != null && parsedUrl.hasScheme)
-        ? parsedUrl.origin
-        : _baseUrl;
+    // safeOrigin guards Uri.origin, which throws on non-http(s) or hostless
+    // URLs (hasScheme alone isn't enough — ftp:// or a scheme with no host
+    // still throw).
+    final referer = safeOrigin(url) ?? _baseUrl;
     final storedUA = await CookieStore().getUserAgent();
     var finalReferer = referer;
     final refererUri = Uri.tryParse(referer);

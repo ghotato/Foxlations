@@ -5,6 +5,7 @@ import '../../../core/models/manga_model.dart';
 import '../../widgets/manga_image.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../core/providers/vault_provider.dart';
+import '../../../core/utils/url_utils.dart';
 import '../../../theme/app_theme.dart';
 
 class LibraryStatsWidget extends StatefulWidget {
@@ -773,7 +774,11 @@ class _MostReadSeriesCard extends StatelessWidget {
                             width: 36,
                             height: 50,
                             fit: BoxFit.cover,
-                            referer: Uri.tryParse(m.url)?.origin,
+                            // Uri.origin THROWS on a scheme-less/relative url
+                            // (common for migrated entries), which crashed this
+                            // whole card to a grey box in a release build. The
+                            // helper guards it.
+                            referer: safeOrigin(m.url),
                           )
                         : Container(
                             width: 36,
