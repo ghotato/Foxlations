@@ -239,6 +239,13 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('New: migrate a whole source at once. Library settings '
+                '→ "Migrate a Source" moves every entry from one source to '
+                'another — for swapping an old source for a newer one on the '
+                'same site, or re-homing titles imported from another app\'s '
+                'backup. Same-site entries match exactly by URL, with an '
+                'optional match-by-title for cross-site moves; anything '
+                'unmatched is left in place.'),
             _ChangelogItem('Bulk migration is more reliable: fixed a black screen '
                 'that could appear after migrating an entry, added a short '
                 'loading pause so the hand-off to the next entry isn\'t jarring, '

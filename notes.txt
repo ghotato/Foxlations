@@ -27,6 +27,13 @@ Migration
   after migrating one entry, added a short loading pause so the hand-off to the
   next entry isn't jarring, and pressing Back now cancels the rest of the batch
   instead of jumping to the next one.
+- New: migrate a whole source at once. Library settings → "Migrate a Source"
+  moves every entry from one source to another — ideal for swapping an old
+  source for a newer one on the same site, or re-homing titles you imported
+  from another app's backup (whose original source isn't installed here).
+  Same-site entries match exactly by their URL; there's an optional "match by
+  title" toggle for cross-site moves. Anything that can't be matched is left in
+  place and listed so nothing is lost.
 
 Sources
 - RepoForge is now clearly marked as beta, in the app and on the site — it won't

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../theme/app_theme.dart';
+import 'source_migrate_screen.dart';
 
 class LibrarySettingsPage extends StatefulWidget {
   const LibrarySettingsPage({super.key});
@@ -138,6 +139,18 @@ class _LibrarySettingsPageState extends State<LibrarySettingsPage> {
             subtitle: 'Show badge on library manga cards',
             value: _showUpdateCount,
             onChanged: (v) { setState(() => _showUpdateCount = v); _save('lib_show_update_count', v); },
+          ),
+          const SizedBox(height: 8),
+          _SectionHeader(title: 'Data'),
+          _NavTile(
+            icon: Icons.swap_horiz_rounded,
+            iconColor: cs.primary,
+            title: 'Migrate a Source',
+            subtitle: 'Move every entry from one source to another',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SourceMigrateScreen()),
+            ),
           ),
           const SizedBox(height: 24),
         ],

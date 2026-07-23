@@ -1,7 +1,7 @@
 name: manga_reader
 description: A manga reading app with extension-based sources.
 publish_to: 'none'
-version: 0.2.13+37
+version: 0.2.14+38
 
 environment:
   sdk: ^3.11.3
