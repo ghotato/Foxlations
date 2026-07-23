@@ -127,6 +127,11 @@ class MangayomiJsGenerator {
 
   // ── Template filling ──────────────────────────────────────────────────────
 
+  /// Resolved spec + selectors for a detected site, exposed so the Dart
+  /// generator can emit from the same detection result instead of duplicating
+  /// framework identification, selector lookup and endpoint resolution.
+  static DartSpecView specView(Map<String, dynamic> ext) => DartSpecView._(ext);
+
   static String _fill(String template, _Spec s) {
     final sel = s.selectors;
     // Mangayomi expects `const mangayomiSources = [ {…} ]` — an ARRAY of source
@@ -1924,3 +1929,50 @@ const _Selectors _mangaThemesia = _Selectors(
   episodeName: 'a',
   videoIframe: '',
 );
+
+/// Public, read-only view of a resolved [_Spec] and its selectors.
+///
+/// Exists so the Dart generator emits from the SAME detection result the JS one
+/// uses — framework identification, the selector catalog and endpoint discovery
+/// all stay in one place rather than being reimplemented per output language.
+class DartSpecView {
+  final _Spec _s;
+  DartSpecView._(Map<String, dynamic> ext) : _s = _Spec.fromMap(ext);
+
+  String get name => _s.name;
+  String get baseUrl => _s.baseUrl;
+  String get lang => _s.lang;
+  String get framework => _s.framework;
+  int get itemType => _s.itemType;
+
+  /// A valid Dart class name derived from the source name — the emitted file
+  /// declares `class <this> extends MProvider`.
+  String get className {
+    final cleaned = _s.name.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    if (cleaned.isEmpty) return 'GeneratedSource';
+    final head = cleaned[0];
+    // A class name can't start with a digit.
+    return RegExp(r'[0-9]').hasMatch(head)
+        ? 'S$cleaned'
+        : head.toUpperCase() + cleaned.substring(1);
+  }
+
+  String get popularPath => _s.selectors.popularPath;
+  String get latestPath => _s.selectors.latestPath;
+  String get searchPath => _s.selectors.searchPath;
+  String get item => _s.selectors.item;
+  String get title => _s.selectors.title;
+  String get cover => _s.selectors.cover;
+  String get coverAttr => _s.selectors.coverAttr;
+  String get nextPage => _s.selectors.nextPage;
+  String get detailTitle => _s.selectors.detailTitle;
+  String get detailCover => _s.selectors.detailCover;
+  String get detailDesc => _s.selectors.detailDesc;
+  String get detailAuthor => _s.selectors.detailAuthor;
+  String get detailGenre => _s.selectors.detailGenre;
+  String get chapterList => _s.selectors.chapterList;
+  String get chapterName => _s.selectors.chapterName;
+  String get pageImages => _s.selectors.pageImages;
+  String get pageImageAttr => _s.selectors.pageImageAttr;
+  String get episodeList => _s.selectors.episodeList;
+}

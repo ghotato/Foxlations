@@ -1,14 +1,23 @@
-RepoForge recognises more site layouts, so generated sources pick up the right
-things on more sites.
+RepoForge now builds sources that actually work, plus two library fixes.
 
 RepoForge
-- Five more site layouts are now understood properly: MadTheme, WPComics,
-  ZeistManga, FMReader and nhentai-style galleries. These were already being
-  identified by name, but nothing was known about how they arrange their pages,
-  so a generated source fell back to generic guesses — usually finding nothing,
-  and occasionally picking up an advert instead of a title. Each now has its own
-  list, title, cover, chapter and page layouts.
-- Search now works in generated sources for sites whose results page is laid out
-  differently from their browse page. Only the browse layout was recognised, so
-  a source could list titles perfectly and then find nothing at all for every
-  search.
+- Sources you build are now created in the app's own format instead of
+  JavaScript. The JavaScript ones never worked: the part that fetches a page
+  handed back a response with no content, so every source came up empty no
+  matter how well its selectors matched. Nothing about a generated source was
+  visibly wrong, which is why this took so long to pin down. They are now built
+  the same way the bundled sources are, and are tested against live sites before
+  release.
+- A site whose whole card is a single link no longer comes back empty. The
+  generated code only looked for a link inside each card, so on sites where the
+  card *is* the link it found none and quietly discarded every result.
+
+Library
+- "Items per row" now actually goes to 6. The option offered up to six, but the
+  grid quietly capped at four on a phone, so choosing five or six changed the
+  number on screen and nothing else.
+- Scrolling the category strip is smooth again. Each chip was re-resolving its
+  font on every frame of a drag, which made the whole row stutter.
+
+Note: sources you built earlier with RepoForge were JavaScript and will still be
+empty. Rebuild them from the same site URL and they'll work.

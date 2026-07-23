@@ -239,6 +239,25 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Sources you build with RepoForge are now created in '
+                'the app\'s own format instead of JavaScript. The JavaScript '
+                'ones never worked — the part that fetches a page handed back '
+                'a response with no content, so a source came up empty no '
+                'matter how well its selectors matched. They\'re now built the '
+                'same way the bundled sources are, and tested against live '
+                'sites before release. Sources you built earlier will still be '
+                'empty; rebuild them from the same site URL and they\'ll work.'),
+            _ChangelogItem('RepoForge: a site whose whole card is one big link '
+                'no longer comes back empty. The generated code only looked '
+                'for a link inside each card, so where the card is itself the '
+                'link it found none and discarded every result.'),
+            _ChangelogItem('Scrolling the library category strip is smooth '
+                'again — each chip was re-resolving its font on every frame of '
+                'a drag, which made the whole row stutter.'),
+            _ChangelogItem('Library "Items per row" now actually goes to 6. '
+                'The option offered up to six, but the grid quietly capped at '
+                'four on a phone, so picking five or six changed the number on '
+                'screen and nothing else.'),
             _ChangelogItem('RepoForge understands five more site layouts — '
                 'MadTheme, WPComics, ZeistManga, FMReader and nhentai-style '
                 'galleries. They were already recognised by name, but nothing '

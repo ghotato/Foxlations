@@ -11,7 +11,7 @@ import 'source_adapter.dart';
 /// The repo is a normal Mangayomi/Foxlations tree:
 ///   {docs}/Foxlations/local_repos/my_sources/
 ///     index.json                       ← { repoName, repoVersion, sources:[…] }
-///     manga/src/{lang}/{pkg}.js         ← generated source (relative sourceCodeUrl)
+///     manga/src/{lang}/{pkg}.dart       ← generated source (relative sourceCodeUrl)
 ///
 /// Because `sourceCodeUrl` is stored **relative**, the existing install path
 /// (`SourceManager._resolveSourceCodeUrl` + local-file loading) resolves it
@@ -57,7 +57,7 @@ class LocalRepoService {
   /// the repo. Returns the resulting [MangaSource].
   Future<MangaSource> createOrUpdateSource(Map<String, dynamic> ext) async {
     final dir = await _repoDir();
-    final rel = RepoForgeSourceAdapter.pkgPath(ext); // manga/src/en/foo.js
+    final rel = RepoForgeSourceAdapter.pkgPath(ext); // manga/src/en/foo.dart
     final js = RepoForgeSourceAdapter.generateSourceCode(ext);
 
     // Write the JS at its repo-relative path.

@@ -1,26 +1,32 @@
 import '../models/source_model.dart';
+import 'mangayomi_dart_generator.dart';
 import 'mangayomi_js_generator.dart';
 
 /// Bridges RepoForge's `Map`-based extension records to this app's
-/// [MangaSource] model and JS source contract.
+/// [MangaSource] model and source contract.
 ///
-/// The vendored [MangayomiJsGenerator] emits a Mangayomi-shaped index row; this
-/// adapter reconciles the field differences with what [MangaSource.fromJson]
-/// expects:
-///   - `sourceCodeLanguage`: Mangayomi encodes JS as the int `1`; we use the
-///     string `'js'` (passing the int would crash `fromJson`'s `as String?`).
-///   - `framework`: absent from the Mangayomi row — carried from the ext map.
-///   - `config`: Mangayomi's `additionalParams` maps to our `config`.
+/// Generated sources are **Dart**, not JavaScript. The JS path was replaced
+/// because its HTTP bridge returned a response whose body never reached the
+/// source — verified by running a generated JS source against a live site,
+/// where the fetch reported no body and every selector consequently matched
+/// nothing, making every generated JS source non-functional on both platforms.
+/// Dart also avoids `flutter_js`'s per-platform engine split (QuickJS on
+/// Android, JavaScriptCore on iOS) and is what `lib/eval/lib.dart` already
+/// defaults to, so generated sources now run on the same runtime as the
+/// hand-written ones.
+///
+/// [MangayomiJsGenerator] is still used for the index row and detection spec;
+/// only code emission moved.
 class RepoForgeSourceAdapter {
-  /// The generated `.js` source text (a `class DefaultExtension extends
-  /// MProvider`), ready to run in this app's `flutter_js` runtime.
+  /// The generated `.dart` source text (a `class … extends MProvider`), ready
+  /// to run in this app's d4rt runtime.
   static String generateSourceCode(Map<String, dynamic> ext) =>
-      MangayomiJsGenerator.generateSource(ext);
+      MangayomiDartGenerator.generateSource(ext);
 
-  /// Repo-relative path the JS should live at and be referenced from in
-  /// index.json, e.g. `manga/src/en/foo.js`.
+  /// Repo-relative path the source should live at and be referenced from in
+  /// index.json, e.g. `manga/src/en/foo.dart`.
   static String pkgPath(Map<String, dynamic> ext) =>
-      MangayomiJsGenerator.pkgPath(ext);
+      MangayomiDartGenerator.pkgPath(ext);
 
   /// A [MangaSource]-shaped index row for the generated source. [sourceCodeUrl]
   /// is typically the repo-relative [pkgPath] for local repos (resolved against
@@ -49,12 +55,11 @@ class RepoForgeSourceAdapter {
       row['itemType'] = 'manga';
     }
 
-    // sourceCodeLanguage: Mangayomi int 1 -> our string 'js'.
-    final scl = row['sourceCodeLanguage'];
-    row['sourceCodeLanguage'] =
-        (scl == 1 || scl == '1' || scl == 'js' || scl == 'javascript')
-            ? 'js'
-            : 'dart';
+    // Always 'dart': the emitted code is Dart regardless of what the Mangayomi
+    // row says, and this field decides which runtime lib/eval/lib.dart hands
+    // the source to. Leaving the row's value here would route Dart code into
+    // the JS engine.
+    row['sourceCodeLanguage'] = 'dart';
 
     // framework: not in the Mangayomi row — carry it from detection.
     final fw = ext['framework'];

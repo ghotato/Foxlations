@@ -585,17 +585,16 @@ class _LibraryScreenState extends State<LibraryScreen>
     return withRead.first;
   }
 
-  /// Columns for the grid. The user's "Items per row" wins; the width-based
-  /// values are only the starting point before they've chosen one, and still
-  /// cap the count on narrow phones so cards don't become unreadably small.
+  /// Columns for the grid — whatever the user picked in "Items per row".
+  ///
+  /// This used to cap the count by screen width (4 on a phone, 5 at 600dp, 6 at
+  /// 840dp) while the picker still offered up to 6. On a phone that silently
+  /// swallowed the choice: selecting 5 or 6 changed the number on screen but
+  /// never the grid. The setting is already bounded to 2..6 when it's stored,
+  /// so honour it — a user asking for six small covers has asked for exactly
+  /// that, and can step back down if they don't like it.
   int _getColumnCount(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final maxForWidth = width >= 840
-        ? 6
-        : width >= 600
-            ? 5
-            : 4;
-    return _librarySettings.itemsPerRow.clamp(2, maxForWidth);
+    return _librarySettings.itemsPerRow.clamp(2, 6);
   }
 
   PreferredSizeWidget _buildSelectAppBar(ColorScheme cs) {
@@ -1150,7 +1149,20 @@ class _CategoryTabs extends StatelessWidget {
           Container(width: 1, height: 24, color: cs.surfaceContainerHighest),
           // Category chips
           Expanded(
-            child: ListView.separated(
+            child: Builder(builder: (context) {
+              // Resolve the two label styles ONCE. GoogleFonts.manrope() does a
+              // registry lookup on every call, and calling it inside
+              // itemBuilder meant every chip re-resolved its font on every
+              // frame of a drag — which is what made this strip stutter.
+              final selectedStyle = GoogleFonts.manrope(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: cs.primary);
+              final unselectedStyle = GoogleFonts.manrope(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: cs.outline);
+              return ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               itemCount: tabs.length,
@@ -1179,19 +1191,14 @@ class _CategoryTabs extends StatelessWidget {
                               : Colors.transparent,
                           width: 1.5)),
                       child: Text(label,
-                          style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              fontWeight: isSelected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: isSelected
-                                  ? cs.primary
-                                  : cs.outline)),
+                          style:
+                              isSelected ? selectedStyle : unselectedStyle),
                     ),
                   ),
                 );
               },
-            ),
+              );
+            }),
           ),
         ],
       ),
