@@ -32,6 +32,23 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# MSVC 14.51 (Visual Studio 18, now on the GitHub windows-latest runner) turned
+# the <experimental/coroutine> deprecation into a HARD ERROR:
+#   error C2338: static assertion failed: 'error STL1011: The /await compiler
+#   option, <experimental/coroutine> ... are deprecated by Microsoft and will be
+#   REMOVED SOON ... define _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+#   to suppress this error for now.'
+# Both flutter_inappwebview_windows and webview_windows still use the pre-C++20
+# coroutine header, so the build fails on that assert alone — nothing is
+# actually broken, and the header still works in this toolset.
+#
+# Set here rather than in the workflow (e.g. via the CL env var) so a local
+# `flutter build windows` behaves the same as CI, and deliberately at directory
+# scope: add_definitions propagates to every subdirectory added after it, which
+# is what reaches the plugins pulled in by generated_plugins.cmake below.
+# Remove once both plugins migrate to <coroutine>.
+add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
