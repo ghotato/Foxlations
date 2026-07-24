@@ -721,17 +721,29 @@ class FrameworkDetectorService {
     _FrameworkSig(name: 'StalkerCMS', patterns: ['chapter-image-canvas', 'load-more-releases', 'comic-card-link'], confidence: 91, contentType: 'Manga', version: 'StalkerCMS'),
     _FrameworkSig(name: 'VerComics', patterns: ['popimg', 'wp-pagenavi', 'div#lector', 'tax_box'], confidence: 88, contentType: 'Comic', version: 'VerComics'),
     _FrameworkSig(name: 'BakkinReaderX', patterns: ['main.php', '#m=', '#v=', '#c='], confidence: 88, contentType: 'Manga', version: 'Bakkin'),
+    // Additional manga themes mined from lib-multisrc (previously undetected).
+    _FrameworkSig(name: 'ClipStudioReader', patterns: ['div#meta input[name=param]', 'reqtype=', 'scramble > width', 'totalpage'], confidence: 90, contentType: 'Manga', version: 'ClipStudio'),
+    _FrameworkSig(name: 'ColorlibAnime', patterns: ['product__page__content', 'product__item', 'set-bg', 'anime__details'], confidence: 86, contentType: 'Manga', version: 'Colorlib'),
+    _FrameworkSig(name: 'EroMuse', patterns: ['/comics/album/', '/comics/picture/', 'gallery-cards', 'top_gal'], confidence: 87, contentType: 'Comic', version: 'EroMuse'),
+    _FrameworkSig(name: 'Gattsu', patterns: ['span.thumb-titulo', 'article:published_time', 'thumb-titulo'], confidence: 84, contentType: 'Manga', version: 'Gattsu'),
+    _FrameworkSig(name: 'HentaiHand', patterns: ['/api/comics/', '/en/comic/', 'uploaded_at', 'total_favorites'], confidence: 90, contentType: 'Manga', version: 'HentaiHand'),
+    _FrameworkSig(name: 'Manga18', patterns: ['slides_p_path', 'mg_info', 'mg_name', '/list-manga/'], confidence: 90, contentType: 'Manhwa', version: 'Manga18'),
+    _FrameworkSig(name: 'MmLook', patterns: ['vbfsa256', 'smkhy258', 'smkd95fv', 'likedata'], confidence: 90, contentType: 'Manga', version: 'MmLook'),
 
-    // Anime themes (yuzono lib-multisrc)
-    _FrameworkSig(name: 'DooPlay', patterns: ['w_item_a', 'ul.episodios', 'numerando', 'doo_player_ajax'], confidence: 91, contentType: 'Anime', version: 'DooPlay'),
-    _FrameworkSig(name: 'AnimeStream', patterns: ['eplister', 'listupd', 'epl-num', 'data-em'], confidence: 91, contentType: 'Anime', version: 'AnimeStream'),
-    _FrameworkSig(name: 'DataLifeEngine', patterns: ['dle-content', 'do=search', 'div.mov', 'dle_root'], confidence: 88, contentType: 'Anime', version: 'DLE'),
-    _FrameworkSig(name: 'DopeFlix', patterns: ['flw-item', 'detail_page-infor', '/ajax/episode/sources/', 'eps-item'], confidence: 92, contentType: 'Anime', version: 'FlixHQ'),
-    _FrameworkSig(name: 'WcoTheme', patterns: ['sidebar_cat', 'wcostream', 'watchanimesub', 'recent-release'], confidence: 91, contentType: 'Anime', version: 'WcoTheme'),
-    _FrameworkSig(name: 'AnimeKai', patterns: ['ani_id=', 'aitem', '/ajax/links/list?token=', 'enc-dec.app'], confidence: 92, contentType: 'Anime', version: 'AnimeKai'),
-    _FrameworkSig(name: 'Anikoto', patterns: ['flexserieslist', 'vrf=', '/ajax/episode/list/', 'ani.items'], confidence: 91, contentType: 'Anime', version: 'Anikoto'),
-    _FrameworkSig(name: 'YFlix', patterns: ['enc-movies-flix', 'film-section', '/ajax/links/view?id='], confidence: 92, contentType: 'Anime', version: 'YFlix'),
-    _FrameworkSig(name: 'PelisPlus', patterns: ['pelisplus', '/drive/v1/shares/'], confidence: 78, contentType: 'Anime', version: 'PelisPlus'),
+    // Anime themes (yuzono lib-multisrc) — patterns mined from the framework
+    // implementations; extra distinctive selectors/endpoints raise the match
+    // count (detection needs >=2), so markup variations still clear the bar.
+    _FrameworkSig(name: 'DooPlay', patterns: ['w_item_a', 'ul.episodios', 'numerando', 'doo_player_ajax', 'div#seasons', 'pag_episodes', 'div.sheader'], confidence: 91, contentType: 'Anime', version: 'DooPlay'),
+    _FrameworkSig(name: 'AnimeStream', patterns: ['eplister', 'listupd', 'epl-num', 'data-em', 'epl-sub', 'epl-date', 'epl-title'], confidence: 91, contentType: 'Anime', version: 'AnimeStream'),
+    _FrameworkSig(name: 'DataLifeEngine', patterns: ['dle-content', 'do=search', 'div.mov', 'dle_root', 'engine/ajax', 'dle_login_hash'], confidence: 88, contentType: 'Anime', version: 'DLE'),
+    _FrameworkSig(name: 'DopeFlix', patterns: ['flw-item', 'detail_page-infor', '/ajax/episode/sources/', 'eps-item', 'data-linkid', '/ajax/season/episodes/', 'film_list-wrap'], confidence: 92, contentType: 'Anime', version: 'FlixHQ'),
+    _FrameworkSig(name: 'WcoTheme', patterns: ['sidebar_cat', 'wcostream', 'watchanimesub', 'recent-release', 'catara', 'konuara'], confidence: 91, contentType: 'Anime', version: 'WcoTheme'),
+    _FrameworkSig(name: 'AnimeKai', patterns: ['ani_id=', 'aitem', '/ajax/links/list?token=', 'enc-dec.app', '/ajax/episodes/list?ani_id=', 'enc-kai', 'data-jp'], confidence: 92, contentType: 'Anime', version: 'AnimeKai'),
+    _FrameworkSig(name: 'Anikoto', patterns: ['flexserieslist', 'vrf=', '/ajax/episode/list/', 'ani.items', '/ajax/server/list?servers=', '/api/watch-order/', 'data-tip'], confidence: 91, contentType: 'Anime', version: 'Anikoto'),
+    _FrameworkSig(name: 'YFlix', patterns: ['enc-movies-flix', 'film-section', '/ajax/links/view?id=', '/ajax/links/list?eid=', '/ajax/episodes/list?id=', 'data-lid'], confidence: 92, contentType: 'Anime', version: 'YFlix'),
+    _FrameworkSig(name: 'PelisPlus', patterns: ['pelisplus', '/drive/v1/shares/', '/api/main/'], confidence: 78, contentType: 'Anime', version: 'PelisPlus'),
+    // API-based anime aggregators common on everythingmoe (AllAnime / gogo-API).
+    _FrameworkSig(name: 'AllAnime API', patterns: ['api.allanime.day', 'allanime', 'availableepisodesdetail', 'clock.json'], confidence: 90, contentType: 'Anime', version: 'API'),
 
     // Novel themes (NovelSourcery + lnreader-plugins, reference only)
     _FrameworkSig(name: 'LightNovelWP', patterns: ['epcontent', 'ts-post-image', 'sertogenre', 'epl-price'], confidence: 91, contentType: 'Novel', version: 'LightNovelWP'),
@@ -766,9 +778,14 @@ class FrameworkDetectorService {
     'flexbox2-item', 'secure-chapters-container', 'chapter-image-canvas',
     'load-more-releases', 'series-list-item-link', '/manga/get?mid=',
     '/obras/ranking', '/filtrar?orderby=id_popular', 'card-real',
+    // newly-added lib-multisrc frameworks — near-unique single-match markers
+    'slides_p_path', 'vbfsa256', 'smkhy258', 'smkd95fv',
+    'div#meta input[name=param]', 'thumb-titulo', 'product__page__content',
     // Anime
     'w_item_a', 'eplister', 'doo_player_ajax', 'enc-movies-flix',
     'flexserieslist', 'ani_id=', 'wcostream', 'watchanimesub',
+    'enc-kai', 'enc-dec.app', 'konuara', 'catara', 'api.allanime.day',
+    '/ajax/season/episodes/', '/ajax/server/list?servers=', 'pag_episodes',
     // Novel
     'story__identity-title', 'chapter-group__list-item', 'og:novel:status',
     'lnsearchlive', 'api.novelcool.com', '/api3/', '/server/getcontent?slug=',

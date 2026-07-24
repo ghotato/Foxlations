@@ -891,55 +891,69 @@ class _MangaDetailScreenState extends State<MangaDetailScreen> {
                     ]),
             )),
 
-            // Login prompt when 0 chapters
+            // Empty-chapter state. 0 chapters is usually a parse/availability
+            // issue, not a login wall — so stay neutral ("No chapters found")
+            // and only offer login when the source actually declares a
+            // loginUrl, framed as optional. Sources with no login just get
+            // Retry, so an optional-login (or no-login) source is never gated
+            // behind a misleading "login required" message.
             if ((_manga?.chapters?.isEmpty ?? true) && _manga != null)
-              SliverToBoxAdapter(child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                    border: Border.all(color: cs.outlineVariant),
-                  ),
-                  child: Column(children: [
-                    Icon(Icons.lock_outline_rounded, size: 32, color: cs.outline),
-                    const SizedBox(height: 8),
-                    Text('Login may be required',
-                        style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-                    const SizedBox(height: 4),
-                    Text('This content may require logging in to view chapters.',
-                        style: GoogleFonts.manrope(fontSize: 12, color: cs.outline), textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      FilledButton.icon(
-                        icon: const Icon(Icons.login_rounded, size: 16),
-                        label: Text('Login in Browser',
-                            style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 12)),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
-                        onPressed: () async {
-                          final sourceProvider = context.read<SourceProvider>();
-                          final installed = sourceProvider.getInstalledSource(widget.sourceId);
-                          final loginUrl = installed?.source.config['loginUrl'] as String?
-                              ?? installed?.source.baseUrl ?? '';
-                          await Navigator.pushNamed(context, AppRoutes.webview,
-                              arguments: {'url': loginUrl, 'title': 'Login'});
-                          _loadDetail();
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: _loadDetail,
-                        style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
-                        child: Text('Retry', style: GoogleFonts.manrope(fontWeight: FontWeight.w600, fontSize: 12)),
-                      ),
+              SliverToBoxAdapter(child: Builder(builder: (context) {
+                final installed = context
+                    .read<SourceProvider>()
+                    .getInstalledSource(widget.sourceId);
+                final loginUrl = installed?.source.config['loginUrl'] as String?;
+                final hasLogin = loginUrl != null && loginUrl.isNotEmpty;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                    child: Column(children: [
+                      Icon(hasLogin ? Icons.lock_outline_rounded : Icons.menu_book_outlined,
+                          size: 32, color: cs.outline),
+                      const SizedBox(height: 8),
+                      Text('No chapters found',
+                          style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                      const SizedBox(height: 4),
+                      Text(
+                          hasLogin
+                              ? 'Nothing loaded for this title. Try again — or, for this source, logging in can sometimes unlock more.'
+                              : 'Nothing loaded for this title. It may have none yet, or the source had trouble loading them. Try again.',
+                          style: GoogleFonts.manrope(fontSize: 12, color: cs.outline), textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        if (hasLogin) ...[
+                          FilledButton.icon(
+                            icon: const Icon(Icons.login_rounded, size: 16),
+                            label: Text('Log in',
+                                style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 12)),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: cs.primary, foregroundColor: cs.onPrimary,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                            onPressed: () async {
+                              await Navigator.pushNamed(context, AppRoutes.webview,
+                                  arguments: {'url': loginUrl, 'title': 'Login'});
+                              _loadDetail();
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        OutlinedButton(
+                          onPressed: _loadDetail,
+                          style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                          child: Text('Retry', style: GoogleFonts.manrope(fontWeight: FontWeight.w600, fontSize: 12)),
+                        ),
+                      ]),
                     ]),
-                  ]),
-                ),
-              )),
+                  ),
+                );
+              })),
 
             // Chapter list
             Builder(builder: (context) {

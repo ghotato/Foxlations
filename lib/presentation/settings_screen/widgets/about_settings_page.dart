@@ -239,6 +239,36 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Fixed: when a title had more categories than fit on '
+                'screen, the Add to Category / Edit Categories sheet couldn\'t '
+                'scroll, so the Save button was off-screen. The list now scrolls '
+                'and Save stays reachable.'),
+            _ChangelogItem('RepoForge now builds engine-specific sources instead '
+                'of one generic template — Madara, MangaThemesia, MMRCMS, '
+                'FlameComics and LightNovel-WP for manga/novels, and DooPlay, '
+                'AnimeStream, HiAnime-style (Zorotheme) and FlixHQ (DopeFlix) '
+                'sites for anime. The '
+                'generic version couldn\'t load their content (chapters over a '
+                'background request, pages in embedded lists, episode video on '
+                'third-party hosts); the new ones do, and hand the anime embeds '
+                'to the built-in host extractors — now including MegaCloud, the '
+                'host behind HiAnime. A generated Madara source was verified '
+                'pulling full chapters and pages from a live site.'),
+            _ChangelogItem('RepoForge fingerprints seven more manga engines '
+                '(ClipStudioReader, ColorlibAnime, EroMuse, Gattsu, HentaiHand, '
+                'Manga18, MmLook), so more sites are recognised instead of '
+                'falling back to a generic guess.'),
+            _ChangelogItem('RepoForge detects anime sites more reliably. The '
+                'anime framework fingerprints (DooPlay, AnimeStream, DopeFlix, '
+                'WcoTheme, AnimeKai, Anikoto, YFlix and more) gained extra '
+                'distinctive selectors, so a site is recognised even when its '
+                'markup varies — plus AllAnime-style API sites are now '
+                'identified.'),
+            _ChangelogItem('A title that loads no chapters no longer claims '
+                '"Login may be required" — that was a guess shown for any empty '
+                'result, misleading for sources where login is optional or '
+                'absent. It now reads "No chapters found," and a Log in button '
+                'appears only when the source actually supports logging in.'),
             _ChangelogItem('New: migrate a whole source at once. Library settings '
                 '→ "Migrate a Source" moves every entry from one source to '
                 'another — for swapping an old source for a newer one on the '

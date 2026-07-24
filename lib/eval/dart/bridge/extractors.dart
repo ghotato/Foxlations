@@ -5,6 +5,7 @@ import 'package:d4rt/d4rt.dart';
 import '../../anime_extractors/dood_extractor.dart';
 import '../../anime_extractors/filemoon_extractor.dart';
 import '../../anime_extractors/gogocdn_extractor.dart';
+import '../../anime_extractors/megacloud_extractor.dart';
 import '../../anime_extractors/mp4upload_extractor.dart';
 import '../../anime_extractors/mytv_extractor.dart';
 import '../../anime_extractors/okru_extractor.dart';
@@ -164,6 +165,17 @@ class ExtractorBridge {
       'gogoCdnExtractor',
       (visitor, positionalArgs, namedArgs, typeArgs) =>
           GogoCdnExtractor().videosFromUrl(positionalArgs[0] as String),
+      sourceUri: lib,
+    );
+
+    // MegaCloud / RapidCloud — HiAnime (Zorotheme) + FlixHQ family.
+    interpreter.registertopLevelFunction(
+      'megaCloudExtractor',
+      (visitor, positionalArgs, namedArgs, typeArgs) =>
+          MegaCloudExtractor().videosFromUrl(
+        positionalArgs[0] as String,
+        _optStr(positionalArgs, 1) ?? 'MegaCloud',
+      ),
       sourceUri: lib,
     );
 

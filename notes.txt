@@ -1,41 +1,22 @@
-Chapter actions, bulk chapter selection, per-title notes, and faster bulk
-migration.
+RepoForge builds working sources for far more sites, plus better site
+detection and a category-picker fix.
 
-Reading
-- Long-pressing a chapter now opens a menu instead of only toggling a bookmark:
-  Bookmark, Mark all below as read, Mark chapter as read/unread, and Download.
-- The three-dots menu on a title now has Edit categories, Notes, Migrate,
-  Refresh, Select chapters, Remove from library, and Open in browser — the full
-  set, in a sensible order.
-- "Select chapters" turns the chapter list into a multi-select: tap to pick
-  chapters and use the bar at the bottom to bookmark, mark all below as read,
-  mark read, mark unread, or download the whole selection at once.
+Sources (RepoForge)
+- RepoForge now builds a source tailored to a site's engine instead of one
+  generic template. Manga and novels: Madara, MangaThemesia, MMRCMS,
+  FlameComics and LightNovel-WP. Anime: DooPlay, AnimeStream, HiAnime-style
+  (Zorotheme) and FlixHQ (DopeFlix). The generic version couldn't load their
+  chapters, pages or episode video; the tailored ones do — and anime embeds are
+  handed to the built-in host extractors, now including MegaCloud (the host
+  behind HiAnime). A generated Madara source was verified pulling full chapter
+  lists and pages from a live site.
+- RepoForge recognises many more site engines — seven additional manga themes
+  and stronger anime fingerprints — so a site is detected correctly more often
+  instead of falling back to a generic guess.
+- RepoForge is still beta: it won't always get a source perfect, so check what
+  it produces and tweak the selectors if a site doesn't come out right.
 
 Library
-- Titles can hold a note now. Add one from the three-dots "Notes" menu; it shows
-  as a card under the description and is tappable to edit.
-
-Migration
-- Migrating can now carry your tracking over. A new "Tracking" toggle re-binds
-  the entry's MAL / AniList / Kitsu links to the new source so it keeps syncing.
-- Bulk migration is smoother. While you pick a target for one entry, the next
-  one's search runs in the background, so the following screen opens with
-  results already loaded instead of spinning. Results also fill in as each
-  source answers rather than waiting for the slowest one, and a single stuck
-  source can no longer stall the whole batch.
-- Bulk migration is also more reliable: fixed a black screen that could appear
-  after migrating one entry, added a short loading pause so the hand-off to the
-  next entry isn't jarring, and pressing Back now cancels the rest of the batch
-  instead of jumping to the next one.
-- New: migrate a whole source at once. Library settings → "Migrate a Source"
-  moves every entry from one source to another — ideal for swapping an old
-  source for a newer one on the same site, or re-homing titles you imported
-  from another app's backup (whose original source isn't installed here).
-  Same-site entries match exactly by their URL; there's an optional "match by
-  title" toggle for cross-site moves. Anything that can't be matched is left in
-  place and listed so nothing is lost.
-
-Sources
-- RepoForge is now clearly marked as beta, in the app and on the site — it won't
-  always generate a correct source, so check what it produces and tweak the
-  selectors if a site doesn't come out right.
+- Fixed: when a title had more categories than fit on screen, the "Add to
+  Category" and "Edit Categories" sheets couldn't scroll, leaving the Save
+  button off-screen. The list now scrolls and Save stays reachable.

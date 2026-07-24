@@ -26,3 +26,10 @@ The anime video-host extractors under lib/eval/anime_extractors/ are Dart ports
 of Mangayomi's lib/services/anime_extractors/, and the bridge that exposes them
 (lib/eval/dart/bridge/extractors.dart) follows Mangayomi's own approach.
 Portions of the extension-runtime bridge are likewise derived from Mangayomi.
+
+This product also includes software developed by the Aniyomi/yuzono extension
+projects (https://github.com/yuzono), licensed under the Apache License,
+Version 2.0. The MegaCloud extractor (lib/eval/anime_extractors/megacloud_extractor.dart)
+and the RepoForge framework-generation bodies are derived from their
+lib-multisrc framework implementations, used here as reference and re-expressed
+in Dart.
