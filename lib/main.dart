@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'core/models/manga_model.dart';
 import 'core/models/chapter_model.dart';
@@ -29,7 +32,21 @@ import 'presentation/browse_screen/browse_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  await Hive.initFlutter();
+  // Hive storage location. On mobile, initFlutter() uses
+  // getApplicationDocumentsDirectory(), which is an app-private sandbox — the
+  // right place. On desktop that SAME call resolves to the user's shared
+  // Documents folder, so initFlutter() would drop library_*.hive files straight
+  // into Documents (visible, un-sandboxed, and shared with any other Hive app
+  // using the same box names). Point desktop at the app-private support dir
+  // instead — %APPDATA%\Roaming\<app> on Windows — so the library lives with
+  // the app and a reinstall/uninstall governs it. Mobile keeps initFlutter() so
+  // existing installs' data stays exactly where it already is.
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    final supportDir = await getApplicationSupportDirectory();
+    Hive.init(supportDir.path);
+  } else {
+    await Hive.initFlutter();
+  }
   Hive.registerAdapter(LibraryMangaAdapter());
   Hive.registerAdapter(LibraryChapterAdapter());
   Hive.registerAdapter(CategoryAdapter());

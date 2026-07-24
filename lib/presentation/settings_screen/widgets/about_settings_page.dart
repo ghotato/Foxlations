@@ -243,6 +243,9 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 'and iOS. It is the full app, Cloudflare checks included — the '
                 'one thing missing is on-device text recognition and offline '
                 'translation, which Google only provides on phones.'),
+            _ChangelogItem('Windows: the app now shows as Foxlations (window and '
+                'Foxlations.exe) rather than manga_reader, and stores its library '
+                'in its own private data folder instead of your Documents folder.'),
             _ChangelogItem('Fixed: sources on a site that files its titles under '
                 'something other than /manga/ — /title/, /comic/, /webtoon/ and '
                 'so on — browsed the wrong address and came up empty. They now '

@@ -100,9 +100,11 @@ jobs:
           # verified on the Linux build, where the bundle really did land in
           # plugins/flutter_js/bundle. Locate the app by its .exe instead, which
           # keeps working if the plugin is ever fixed upstream.
-          EXE=$(find build/windows -type f -name 'manga_reader.exe' | head -1)
+          # Exe name follows BINARY_NAME in windows/CMakeLists.txt (Foxlations),
+          # NOT the Dart package name (manga_reader).
+          EXE=$(find build/windows -type f -name 'Foxlations.exe' | head -1)
           if [ -z "$EXE" ]; then
-            echo "::error::no manga_reader.exe produced by the Windows build"
+            echo "::error::no Foxlations.exe produced by the Windows build"
             find build/windows -name '*.exe' || true
             exit 1
           fi

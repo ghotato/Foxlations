@@ -2,9 +2,11 @@
 cmake_minimum_required(VERSION 3.14)
 project(manga_reader LANGUAGES CXX)
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "manga_reader")
+# The name of the executable created for the application — this is the on-disk
+# .exe name and what Windows shows in the title bar / taskbar. The Dart package
+# is still `manga_reader` (pubspec `name:`), which is internal and must not
+# change, but users should see Foxlations.
+set(BINARY_NAME "Foxlations")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

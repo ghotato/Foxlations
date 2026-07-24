@@ -20,6 +20,10 @@ Windows
 - Foxlations now builds for Windows, alongside Android and iOS. It is the full
   app, Cloudflare checks included. The one thing missing is the on-device text
   recognition and offline translation, which Google only provides on phones.
+- The Windows app now shows as "Foxlations" (window and Foxlations.exe) instead
+  of "manga_reader", and keeps its library in the app's own private data folder
+  instead of dropping files into your Documents. If an earlier Windows build
+  left library files in Documents, they're no longer used — see below.
 
 Sources
 - Fixed: sources on a site that files its titles under something other than
