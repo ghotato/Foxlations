@@ -127,7 +127,11 @@ jobs:
       # Safety net: keep the build as a downloadable run artifact BEFORE
       # attempting delivery, so a failed Tailscale hop doesn't cost the build.
       - name: Upload Windows artifact
-        if: always()
+        # Guarded on the output rather than a bare always(): when an earlier step
+        # fails, `file` is empty and upload-artifact then fails too with
+        # "Input required and not supplied: path", which buries the real error
+        # under a second, misleading one.
+        if: always() && steps.pkg.outputs.file != ''
         uses: actions/upload-artifact@v4
         with:
           name: foxlations-windows-${{ steps.meta.outputs.version }}

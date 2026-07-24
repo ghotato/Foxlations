@@ -53,10 +53,14 @@ android/key.properties
 # Numbered local build outputs (APK/IPA live on the server, not in git).
 /builds/
 
-# Other platform projects — we only build Android + iOS. These stay on disk
-# (regenerate with `flutter create` if you ever target them) but off GitHub.
+# Other platform projects — we build Android, iOS and Windows. These stay on
+# disk (regenerate with `flutter create` if you ever target them) but off GitHub.
+#
+# windows/ is deliberately NOT in this list: the CI runner builds it, and
+# `flutter build windows` aborts with "No Windows desktop project configured"
+# when the scaffold is missing from the checkout. Only the ~18 source files are
+# tracked — windows/.gitignore keeps flutter/ephemeral/ (the SDK DLLs) out.
 /macos/
-/windows/
 /linux/
 /web/
 
