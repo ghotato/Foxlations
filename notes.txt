@@ -16,6 +16,17 @@ Sources (RepoForge)
 - RepoForge is still beta: it won't always get a source perfect, so check what
   it produces and tweak the selectors if a site doesn't come out right.
 
+Windows
+- Foxlations now builds for Windows, alongside Android and iOS. It is the full
+  app, Cloudflare checks included. The one thing missing is the on-device text
+  recognition and offline translation, which Google only provides on phones.
+
+Sources
+- Fixed: sources on a site that files its titles under something other than
+  /manga/ — /title/, /comic/, /webtoon/ and so on — browsed the wrong address
+  and came up empty. They now read the right one, and four new manhwa and
+  manga sources that needed it have been added to the Foxlations repo.
+
 Library
 - Fixed: when a title had more categories than fit on screen, the "Add to
   Category" and "Edit Categories" sheets couldn't scroll, leaving the Save

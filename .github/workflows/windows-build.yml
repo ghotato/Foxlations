@@ -1,0 +1,190 @@
+name: Windows build → server
+
+# Builds the Windows desktop app on a GitHub runner and delivers it to your
+# server over Tailscale (scp) into the SAME builds/build-NNN/ folder the Android
+# APK and the iOS IPA land in — no GitHub Release, nothing stored on GitHub
+# beyond the 14-day safety-net artifact.
+#
+# Triggered exactly like ios-build.yml: by PUSHING a version bump. Every build
+# writes a new `version:` into pubspec.yaml, so that path changing is the signal
+# that a release happened, and no API token is needed anywhere.
+#
+# Kept separate from ios-build.yml on purpose. That workflow carries fragile,
+# hard-won iOS signing logic; the Windows build is unsigned and shares none of
+# it, so a change here can't break the iPhone pipeline.
+#
+# Windows is the only desktop target that reaches feature parity with mobile:
+# flutter_inappwebview_windows and webview_windows both compile in, so sources
+# behind a Cloudflare challenge work, and webview_service.dart already
+# special-cases Platform.isWindows. (Linux was evaluated and dropped — it has no
+# system webview, so those sources cannot work there. macOS would work but was
+# not worth a second runner.)
+#
+# One gap that is expected rather than a bug: Google ML Kit is Android/iOS only,
+# so on-device OCR and offline translation are unavailable on Windows.
+# ai_translation_service.dart already guards that behind
+# `Platform.isAndroid || Platform.isIOS`, so it degrades instead of crashing.
+on:
+  push:
+    branches: [main]
+    paths: ['pubspec.yaml']
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: 'Build number N (blank = read from pubspec.yaml)'
+        required: false
+      version:
+        description: 'Version string e.g. 0.2.16+40 (blank = pubspec.yaml)'
+        required: false
+
+env:
+  FLUTTER_VERSION: '3.44.6'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    # Git Bash for every step, so the version parsing and the scp delivery are
+    # the same shell as the iOS job instead of a PowerShell dialect.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # pubspec.yaml is the single source of truth: `version: 0.2.16+40` gives
+      # both the version string and the build number after the '+'. Manual
+      # dispatch inputs override it when set.
+      - name: Resolve version and build number
+        id: meta
+        run: |
+          V='${{ inputs.version }}'
+          N='${{ inputs.build_number }}'
+          [ -n "$V" ] || V=$(grep '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '[:space:]')
+          [ -n "$N" ] || N="${V##*+}"
+          if [ -z "$V" ] || [ -z "$N" ]; then
+            echo "::error::could not resolve version/build number from pubspec.yaml"
+            exit 1
+          fi
+          echo "version=$V"                >> "$GITHUB_OUTPUT"
+          echo "nnn=$(printf '%03d' "$N")" >> "$GITHUB_OUTPUT"
+          echo "Building $V as build $N"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # rhttp is an FFI plugin compiled from Rust source for the host target.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build Windows app
+        run: |
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release
+
+      - name: Package Windows zip
+        id: pkg
+        run: |
+          set -euo pipefail
+          OUT="foxlations-${{ steps.meta.outputs.version }}-windows-x64.zip"
+          # Do NOT hardcode build/windows/x64/runner/Release. flutter_js's
+          # windows/CMakeLists.txt (line 33) does
+          #   set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH .. FORCE)
+          # and CMAKE_INSTALL_PREFIX is a CACHE variable, so it leaks out of the
+          # plugin's own scope and the app can be installed under the plugin's
+          # directory instead. Flutter still prints a success line either way —
+          # verified on the Linux build, where the bundle really did land in
+          # plugins/flutter_js/bundle. Locate the app by its .exe instead, which
+          # keeps working if the plugin is ever fixed upstream.
+          EXE=$(find build/windows -type f -name 'manga_reader.exe' | head -1)
+          if [ -z "$EXE" ]; then
+            echo "::error::no manga_reader.exe produced by the Windows build"
+            find build/windows -name '*.exe' || true
+            exit 1
+          fi
+          APPDIR=$(dirname "$EXE")
+          if [ ! -d "$APPDIR/data" ]; then
+            echo "::error::found $EXE but no data/ beside it — incomplete build"
+            ls -la "$APPDIR"
+            exit 1
+          fi
+          echo "app dir: $APPDIR"
+          # Compress-Archive needs a Windows-style absolute destination, and the
+          # zip must contain the app's contents at its root (not a nested
+          # folder), so resolve the destination before changing directory.
+          ROOT="$PWD"
+          DEST_WIN=$(pwd -W 2>/dev/null || echo "$ROOT")
+          # The whole folder is the app: the .exe alone will not start without
+          # flutter_windows.dll, the plugin DLLs and data/.
+          ( cd "$APPDIR" && powershell -Command "Compress-Archive -Path * -DestinationPath '${DEST_WIN}/${OUT}' -Force" )
+          echo "file=$ROOT/$OUT" >> "$GITHUB_OUTPUT"
+          ls -lh "$ROOT/$OUT"
+
+      # Safety net: keep the build as a downloadable run artifact BEFORE
+      # attempting delivery, so a failed Tailscale hop doesn't cost the build.
+      - name: Upload Windows artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foxlations-windows-${{ steps.meta.outputs.version }}
+          path: ${{ steps.pkg.outputs.file }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Join your tailnet (ephemeral node, auto-removed after the run).
+      - name: Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE }}
+
+      - name: Deliver Windows build to server
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER_NAME: ${{ secrets.SERVER_USER }}
+          BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          # Accept the key either as raw PEM text or base64 (base64 survives
+          # copy/paste into the secret without newline mangling).
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          else
+            printf '%s' "$SSH_KEY" | tr -d '[:space:]' | base64 -d > ~/.ssh/id_ci
+          fi
+          chmod 600 ~/.ssh/id_ci
+          # Windows OpenSSH checks NTFS ACLs, not POSIX bits, and refuses a key
+          # any other account can read — Git Bash's chmod alone does not satisfy
+          # it. Strip inheritance and grant only the current user.
+          KEY_WIN=$(cygpath -w ~/.ssh/id_ci)
+          powershell -Command "icacls '$KEY_WIN' /inheritance:r /grant:r ('{0}:(R)' -f \$env:USERNAME)" >/dev/null
+          # Fail loudly with a useful message instead of falling back to passwords.
+          if ! ssh-keygen -y -f ~/.ssh/id_ci > /dev/null 2>&1; then
+            echo "::error::SERVER_SSH_KEY is not a valid OpenSSH PRIVATE key. Paste the contents of 'foxlations_ci' (not foxlations_ci.pub), or base64 it: base64 -w0 foxlations_ci"
+            exit 1
+          fi
+          # ConnectTimeout so a dead route fails fast instead of hanging; retry
+          # a few times to ride out a transient Tailscale/DERP hiccup.
+          SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10"
+          DEST="${BUILDS_PATH%/}/build-${{ steps.meta.outputs.nnn }}"
+
+          ok=0
+          for attempt in 1 2 3; do
+            if ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'" \
+               && scp $SSH_OPTS "${{ steps.pkg.outputs.file }}" "${USER_NAME}@${HOST}:${DEST}/"; then
+              ok=1; break
+            fi
+            echo "::warning::delivery attempt ${attempt} failed; retrying in 15s"
+            sleep 15
+          done
+
+          if [ "$ok" = 1 ]; then
+            echo "Delivered Windows build to ${USER_NAME}@${HOST}:${DEST}/"
+          else
+            echo "::error::Could not reach ${HOST}:22 over Tailscale after 3 tries. The build is safe — download it from this run's Artifacts (foxlations-windows-*), or check: (1) the TrueNAS Tailscale app is running and the node shows online, (2) the TAILSCALE auth key hasn't expired, (3) SSH is listening on the server."
+            exit 1
+          fi

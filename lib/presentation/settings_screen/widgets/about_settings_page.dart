@@ -239,6 +239,15 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Foxlations now builds for Windows, alongside Android '
+                'and iOS. It is the full app, Cloudflare checks included — the '
+                'one thing missing is on-device text recognition and offline '
+                'translation, which Google only provides on phones.'),
+            _ChangelogItem('Fixed: sources on a site that files its titles under '
+                'something other than /manga/ — /title/, /comic/, /webtoon/ and '
+                'so on — browsed the wrong address and came up empty. They now '
+                'read the right one, and four new manhwa and manga sources that '
+                'needed it have been added to the Foxlations repo.'),
             _ChangelogItem('Fixed: when a title had more categories than fit on '
                 'screen, the Add to Category / Edit Categories sheet couldn\'t '
                 'scroll, so the Save button was off-screen. The list now scrolls '

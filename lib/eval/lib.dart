@@ -27,9 +27,14 @@ ExtensionService getExtensionService(
     dateFormat: source.dateFormat.isNotEmpty ? source.dateFormat : null,
     dateFormatLocale:
         source.dateFormatLocale.isNotEmpty ? source.dateFormatLocale : null,
-    additionalParams: source.config.isNotEmpty
-        ? source.config.toString()
-        : null,
+    // A framework that wants one bare string — Madara's custom post-type slug,
+    // say — reads it as `additionalParams`, so an explicit `additionalParams`
+    // key in config is passed through as-is. Without this, the multisrc
+    // frameworks only ever saw a stringified map and silently fell back to
+    // their default path. Any other config keeps the old whole-map behaviour.
+    additionalParams: source.config['additionalParams'] != null
+        ? source.config['additionalParams'].toString()
+        : (source.config.isNotEmpty ? source.config.toString() : null),
     notes: source.notes.isNotEmpty ? source.notes : null,
   );
 
