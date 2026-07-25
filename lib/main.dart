@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'core/models/manga_model.dart';
@@ -17,6 +18,7 @@ import 'core/providers/tracking_provider.dart';
 import 'core/providers/vault_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/providers/download_provider.dart';
+import 'core/providers/library_type_provider.dart';
 import 'core/services/library_update_service.dart';
 import 'core/services/backup_service.dart';
 import 'core/services/app_navigator.dart';
@@ -24,6 +26,7 @@ import 'core/services/secure_store.dart';
 import 'theme/app_theme.dart';
 import 'routes/app_routes.dart';
 import 'widgets/app_navigation.dart';
+import 'widgets/library_type_menu.dart';
 import 'presentation/library_screen/library_screen.dart';
 import 'presentation/updates_screen/updates_screen.dart';
 import 'presentation/browse_screen/browse_screen.dart';
@@ -74,6 +77,7 @@ class MangaReaderApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LibraryProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => TrackingProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => VaultProvider()..initialize()),
+        ChangeNotifierProvider(create: (_) => LibraryTypeProvider()..initialize()),
         ChangeNotifierProvider(create: (ctx) {
           final dp = DownloadProvider()..initialize();
           // Wire source provider reference after build
@@ -95,6 +99,7 @@ class MangaReaderApp extends StatelessWidget {
                 primaryColor: themeProvider.primaryColor(Brightness.dark)),
             themeMode: themeProvider.themeMode,
             home: const AppShell(),
+            navigatorObservers: [routeObserver],
             onGenerateRoute: AppRoutes.onGenerateRoute,
             // Wrap the entire app in a ColorFiltered when invert colors is
             // enabled in Appearance settings. The matrix is the standard
@@ -142,13 +147,34 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadUpdatesBadge();
-    // Run any due automatic backup once the library boxes have opened.
+    // Run any due automatic backup once the library boxes have opened, then a
+    // due automatic library update (Settings > Library > Update frequency). Both
+    // wait for the providers to finish loading from disk.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future.delayed(const Duration(seconds: 4));
       try {
         await BackupService().maybeRunAuto();
       } catch (_) {}
+      await _maybeAutoUpdateLibrary();
     });
+  }
+
+  /// Runs a library update if one is due per the frequency / Wi-Fi / charging
+  /// settings. Best-effort and silent: an auto-update must never interrupt the
+  /// user or crash the app. Called on launch and on resume.
+  Future<void> _maybeAutoUpdateLibrary() async {
+    try {
+      if (!await LibraryUpdateService.shouldAutoUpdate()) return;
+      if (!mounted) return;
+      final lib = context.read<LibraryProvider>();
+      final src = context.read<SourceProvider>();
+      if (lib.manga.isEmpty) return; // Providers not loaded yet, or empty library.
+      await LibraryUpdateService.checkForUpdates(
+          libraryProvider: lib, sourceProvider: src);
+      if (mounted) _loadUpdatesBadge();
+    } catch (_) {
+      // Swallow — foreground auto-update is a convenience, not a guarantee.
+    }
   }
 
   void _showVaultPasswordDialog(VaultProvider vault) {
@@ -226,7 +252,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   Future<void> _loadUpdatesBadge() async {
-    final count = await LibraryUpdateService.getUnreadCount();
+    // Honour Settings > Library > "Show update count". When off, keep the badge
+    // at 0 so the Updates tab shows no number. Re-read each time (this runs on
+    // every tab change) so toggling the setting takes effect without a restart.
+    final prefs = await SharedPreferences.getInstance();
+    final show = prefs.getBool('lib_show_update_count') ?? true;
+    final count = show ? await LibraryUpdateService.getUnreadCount() : 0;
     if (mounted) setState(() => _updatesBadge = count);
   }
 
@@ -242,6 +273,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       context.read<VaultProvider>().exitVault();
+    }
+    // On return to the foreground, check whether a library update has come due.
+    if (state == AppLifecycleState.resumed) {
+      _maybeAutoUpdateLibrary();
     }
   }
 
@@ -293,6 +328,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final isVault = context.watch<VaultProvider>().vaultActive;
+    final contentType = context.watch<LibraryTypeProvider>().type;
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -303,6 +339,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onTap: (i) { _onTabChanged(i); if (i != 1) _loadUpdatesBadge(); },
         isVaultMode: isVault,
         updatesBadge: _updatesBadge,
+        contentType: contentType,
+        // Long-press the Library tab to switch between Manga / Anime / Novels.
+        onLibraryLongPress: () => showLibraryTypeMenu(context),
       ),
     );
   }

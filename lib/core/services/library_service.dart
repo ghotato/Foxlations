@@ -332,7 +332,10 @@ class LibraryService {
   /// Returns a map of `date (midnight) → number of chapters read on that
   /// day`, restricted to the last [days] days. Used by the activity
   /// heatmap.
-  Map<DateTime, int> getReadActivityByDay({int days = 365}) {
+  /// [sourceIds], when given, restricts the count to chapters from those
+  /// sources — used to make the stats page reflect only the current content
+  /// type (Manga / Anime / Light Novels). Null counts every source.
+  Map<DateTime, int> getReadActivityByDay({int days = 365, Set<String>? sourceIds}) {
     final now = DateTime.now();
     final cutoff = DateTime(now.year, now.month, now.day)
         .subtract(Duration(days: days - 1));
@@ -341,6 +344,7 @@ class LibraryService {
     for (final ch in _chapterBox!.values) {
       final r = ch.readAt;
       if (r == null || !ch.isRead) continue;
+      if (sourceIds != null && !sourceIds.contains(ch.sourceId)) continue;
       final day = DateTime(r.year, r.month, r.day);
       if (day.isBefore(cutoff)) continue;
       activity[day] = (activity[day] ?? 0) + 1;
@@ -350,8 +354,8 @@ class LibraryService {
 
   /// Current streak: consecutive days ending today (or yesterday) on
   /// which at least one chapter was read.
-  int getCurrentReadingStreak() {
-    final activity = getReadActivityByDay(days: 365);
+  int getCurrentReadingStreak({Set<String>? sourceIds}) {
+    final activity = getReadActivityByDay(days: 365, sourceIds: sourceIds);
     if (activity.isEmpty) return 0;
     final now = DateTime.now();
     var day = DateTime(now.year, now.month, now.day);
@@ -370,8 +374,8 @@ class LibraryService {
   }
 
   /// Longest streak ever recorded in the chapter history.
-  int getLongestReadingStreak() {
-    final activity = getReadActivityByDay(days: 365);
+  int getLongestReadingStreak({Set<String>? sourceIds}) {
+    final activity = getReadActivityByDay(days: 365, sourceIds: sourceIds);
     if (activity.isEmpty) return 0;
     final dates = activity.keys.toList()..sort();
     var longest = 1;

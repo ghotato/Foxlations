@@ -1,8 +1,8 @@
-import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:rhttp/rhttp.dart' as rhttp;
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import '../../../theme/app_theme.dart';
 
 /// AI & Translation settings page.
@@ -415,144 +415,171 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
   }
 
   Widget _buildModelsTab(ColorScheme cs) {
-    return _HuggingFaceModelBrowser(cs: cs);
+    return _OfflineModelManager(cs: cs);
   }
 }
 
-class _HuggingFaceModelBrowser extends StatefulWidget {
+/// Manages Google ML Kit's on-device translation models — the packs the
+/// on-device translator (and "Offline Mode") actually use. Each language is a
+/// standalone ~30 MB download that then works with no connection. ML Kit only
+/// exists on Android/iOS, so elsewhere this explains that instead of offering
+/// downloads that can't happen.
+///
+/// This replaced a mock catalogue of Hugging Face models whose only action was
+/// a "coming soon" toast — those models have no on-device runtime here, so they
+/// could never have been downloaded or run.
+class _OfflineModelManager extends StatefulWidget {
   final ColorScheme cs;
-  const _HuggingFaceModelBrowser({required this.cs});
+  const _OfflineModelManager({required this.cs});
 
   @override
-  State<_HuggingFaceModelBrowser> createState() => _HuggingFaceModelBrowserState();
+  State<_OfflineModelManager> createState() => _OfflineModelManagerState();
 }
 
-class _HuggingFaceModelBrowserState extends State<_HuggingFaceModelBrowser> {
-  final _searchController = TextEditingController();
-  String _query = '';
-  bool _searching = false;
-  List<Map<String, dynamic>> _searchResults = [];
+class _OfflineModelManagerState extends State<_OfflineModelManager> {
+  final _manager = OnDeviceTranslatorModelManager();
 
-  final _curatedModels = [
-    {'name': 'Helsinki-NLP/opus-mt-ja-en', 'desc': 'Japanese → English (OPUS-MT)', 'size': '298 MB', 'downloads': '847K', 'installed': false},
-    {'name': 'Helsinki-NLP/opus-mt-zh-en', 'desc': 'Chinese → English (OPUS-MT)', 'size': '312 MB', 'downloads': '623K', 'installed': false},
-    {'name': 'Helsinki-NLP/opus-mt-ko-en', 'desc': 'Korean → English (OPUS-MT)', 'size': '287 MB', 'downloads': '412K', 'installed': false},
-    {'name': 'kha-white/manga-ocr-base', 'desc': 'Manga OCR — Japanese text recognition', 'size': '450 MB', 'downloads': '2.3M', 'installed': false},
-    {'name': 'staka/fugumt-ja-en', 'desc': 'FuguMT — manga-optimized JP→EN', 'size': '480 MB', 'downloads': '1.2M', 'installed': false},
-    {'name': 'ogkalu/comic-text-and-bubble-detector', 'desc': 'RT-DETR-v2 speech bubble detector', 'size': '126 MB', 'downloads': '89K', 'installed': false},
-    {'name': 'facebook/nllb-200-distilled-600M', 'desc': 'NLLB — 200 languages translation', 'size': '1.2 GB', 'downloads': '4.1M', 'installed': false},
-  ];
+  // Display name -> ML Kit language. English is the pivot every pair routes
+  // through, so it is listed too; the manga source scripts (JA/KO/ZH) lead.
+  static const _languages = <String, TranslateLanguage>{
+    'Japanese': TranslateLanguage.japanese,
+    'Korean': TranslateLanguage.korean,
+    'Chinese': TranslateLanguage.chinese,
+    'English': TranslateLanguage.english,
+    'Spanish': TranslateLanguage.spanish,
+    'French': TranslateLanguage.french,
+    'German': TranslateLanguage.german,
+    'Portuguese': TranslateLanguage.portuguese,
+    'Italian': TranslateLanguage.italian,
+    'Russian': TranslateLanguage.russian,
+    'Arabic': TranslateLanguage.arabic,
+    'Turkish': TranslateLanguage.turkish,
+    'Polish': TranslateLanguage.polish,
+  };
+
+  final Set<String> _downloaded = {}; // bcpCodes present on device
+  final Set<String> _busy = {}; // bcpCodes mid download/delete
+  bool _loading = true;
+
+  bool get _supported => Platform.isAndroid || Platform.isIOS;
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    if (_supported) {
+      _refresh();
+    } else {
+      _loading = false;
+    }
   }
 
-  Future<void> _searchModels(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() { _searchResults = []; _searching = false; });
-      return;
+  Future<void> _refresh() async {
+    final done = <String>{};
+    for (final lang in _languages.values) {
+      try {
+        if (await _manager.isModelDownloaded(lang.bcpCode)) done.add(lang.bcpCode);
+      } catch (_) {}
     }
-    setState(() => _searching = true);
-    try {
-      // Search HuggingFace API
-      final client = await rhttp.RhttpClient.create();
-      final url = 'https://huggingface.co/api/models?search=${Uri.encodeComponent(query)}&filter=translation&sort=downloads&direction=-1&limit=20';
-      final response = await client.requestText(
-        method: rhttp.HttpMethod.get, url: url,
-        headers: rhttp.HttpHeaders.rawMap({'Accept': 'application/json'}));
-      final list = jsonDecode(response.body) as List;
+    if (mounted) {
       setState(() {
-        _searchResults = list.map((m) => {
-          'name': m['id'] ?? m['modelId'] ?? '',
-          'desc': m['pipeline_tag'] ?? 'model',
-          'downloads': _formatNumber(m['downloads'] ?? 0),
-          'likes': m['likes'] ?? 0,
-        }).toList();
-        _searching = false;
+        _downloaded
+          ..clear()
+          ..addAll(done);
+        _loading = false;
       });
-    } catch (e) {
-      setState(() => _searching = false);
     }
   }
 
-  String _formatNumber(dynamic n) {
-    final num = (n is int) ? n : int.tryParse(n.toString()) ?? 0;
-    if (num >= 1000000) return '${(num / 1000000).toStringAsFixed(1)}M';
-    if (num >= 1000) return '${(num / 1000).toStringAsFixed(0)}K';
-    return num.toString();
+  Future<void> _download(TranslateLanguage lang) async {
+    setState(() => _busy.add(lang.bcpCode));
+    try {
+      await _manager.downloadModel(lang.bcpCode);
+      if (mounted) setState(() => _downloaded.add(lang.bcpCode));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Download failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(lang.bcpCode));
+    }
+  }
+
+  Future<void> _delete(TranslateLanguage lang) async {
+    setState(() => _busy.add(lang.bcpCode));
+    try {
+      await _manager.deleteModel(lang.bcpCode);
+      if (mounted) setState(() => _downloaded.remove(lang.bcpCode));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Delete failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(lang.bcpCode));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = widget.cs;
+    if (!_supported) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.smartphone_rounded, size: 40, color: cs.outline),
+              const SizedBox(height: 12),
+              Text(
+                'On-device translation models are available on Android and iOS.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_loading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
-        // Search bar
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-          child: TextField(
-            controller: _searchController,
-            style: GoogleFonts.manrope(fontSize: 14, color: cs.onSurface),
-            decoration: InputDecoration(
-              hintText: 'Search Hugging Face models...',
-              hintStyle: GoogleFonts.manrope(fontSize: 14, color: cs.outline),
-              prefixIcon: Icon(Icons.search_rounded, size: 20, color: cs.outline),
-              suffixIcon: _query.isNotEmpty ? IconButton(
-                icon: Icon(Icons.close, size: 18, color: cs.outline),
-                onPressed: () { _searchController.clear(); setState(() { _query = ''; _searchResults = []; }); },
-              ) : null,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              filled: true, fillColor: cs.surfaceContainerHighest,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            ),
-            onChanged: (v) { setState(() => _query = v); _searchModels(v); },
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            'Download a language to translate it fully offline. Each pack is about '
+            '30 MB and is also fetched automatically the first time you translate '
+            'that language.',
+            style: GoogleFonts.manrope(fontSize: 12, color: cs.outline),
           ),
         ),
-
-        // Search results
-        if (_searching)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
-        else if (_searchResults.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text('SEARCH RESULTS', style: GoogleFonts.manrope(
-                fontSize: 10, fontWeight: FontWeight.w700, color: cs.outline, letterSpacing: 1.0)),
-          ),
-          ..._searchResults.map((m) => _buildModelCard(cs, m, isSearch: true)),
-          const SizedBox(height: 16),
-        ],
-
-        // Curated models
-        if (_query.isEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Text('Curated manga translation models for offline use.',
-                style: GoogleFonts.manrope(fontSize: 12, color: cs.outline)),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text('RECOMMENDED MODELS', style: GoogleFonts.manrope(
-                fontSize: 10, fontWeight: FontWeight.w700, color: cs.primary, letterSpacing: 1.0)),
-          ),
-          ..._curatedModels.map((m) => _buildModelCard(cs, m)),
-        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text('TRANSLATION LANGUAGES',
+              style: GoogleFonts.manrope(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: cs.primary,
+                  letterSpacing: 1.0)),
+        ),
+        ..._languages.entries.map((e) => _row(cs, e.key, e.value)),
         const SizedBox(height: 24),
       ],
     );
   }
 
-  Widget _buildModelCard(ColorScheme cs, Map<String, dynamic> m, {bool isSearch = false}) {
-    final name = m['name'] as String;
-    final desc = m['desc'] as String? ?? '';
-    final downloads = m['downloads']?.toString() ?? '';
-    final size = m['size'] as String? ?? '';
-    final installed = m['installed'] as bool? ?? false;
-
+  Widget _row(ColorScheme cs, String name, TranslateLanguage lang) {
+    final installed = _downloaded.contains(lang.bcpCode);
+    final busy = _busy.contains(lang.bcpCode);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
       child: Container(
@@ -563,54 +590,43 @@ class _HuggingFaceModelBrowserState extends State<_HuggingFaceModelBrowser> {
           border: installed ? Border.all(color: cs.primary.withAlpha(80)) : null,
         ),
         child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: GoogleFonts.manrope(
-                fontSize: 12, fontWeight: FontWeight.w700, color: cs.onSurface)),
-            if (desc.isNotEmpty)
-              Text(desc, style: GoogleFonts.manrope(fontSize: 11, color: cs.outline)),
-            const SizedBox(height: 4),
-            Row(children: [
-              if (downloads.isNotEmpty) ...[
-                Icon(Icons.download_rounded, size: 10, color: cs.outline),
-                const SizedBox(width: 2),
-                Text(downloads, style: GoogleFonts.manrope(fontSize: 10, color: cs.outline)),
-                const SizedBox(width: 8),
-              ],
-              if (size.isNotEmpty) ...[
-                Icon(Icons.storage_rounded, size: 10, color: cs.outline),
-                const SizedBox(width: 2),
-                Text(size, style: GoogleFonts.manrope(fontSize: 10, color: cs.outline)),
-              ],
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name,
+                  style: GoogleFonts.manrope(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: cs.onSurface)),
+              Text(installed ? 'Downloaded — available offline' : 'Not downloaded',
+                  style: GoogleFonts.manrope(fontSize: 11, color: cs.outline)),
             ]),
-          ])),
+          ),
           const SizedBox(width: 8),
-          if (installed)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.success.withAlpha(38),
-                borderRadius: BorderRadius.circular(AppTheme.radiusFull)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.check_rounded, size: 11, color: AppTheme.success),
-                const SizedBox(width: 3),
-                Text('Installed', style: GoogleFonts.manrope(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.success)),
-              ]),
+          if (busy)
+            const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2))
+          else if (installed)
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded, size: 20, color: cs.error),
+              tooltip: 'Delete',
+              onPressed: () => _delete(lang),
             )
           else
             GestureDetector(
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Model downloads coming soon'), duration: Duration(seconds: 1)));
-              },
+              onTap: () => _download(lang),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: cs.primary.withAlpha(38),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusFull)),
+                    color: cs.primary.withAlpha(38),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusFull)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.download_rounded, size: 12, color: cs.primary),
-                  const SizedBox(width: 3),
-                  Text('Get', style: GoogleFonts.manrope(fontSize: 10, fontWeight: FontWeight.w700, color: cs.primary)),
+                  Icon(Icons.download_rounded, size: 14, color: cs.primary),
+                  const SizedBox(width: 4),
+                  Text('Download',
+                      style: GoogleFonts.manrope(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: cs.primary)),
                 ]),
               ),
             ),

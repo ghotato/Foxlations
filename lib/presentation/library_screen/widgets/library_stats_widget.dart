@@ -5,6 +5,8 @@ import '../../../core/models/manga_model.dart';
 import '../../widgets/manga_image.dart';
 import '../../../core/providers/library_provider.dart';
 import '../../../core/providers/vault_provider.dart';
+import '../../../core/providers/source_provider.dart';
+import '../../../core/providers/library_type_provider.dart';
 import '../../../core/utils/url_utils.dart';
 import '../../../theme/app_theme.dart';
 
@@ -41,35 +43,69 @@ class _LibraryStatsWidgetState extends State<LibraryStatsWidget>
   @override
   Widget build(BuildContext context) {
     final isVault = context.watch<VaultProvider>().vaultActive;
+    // Scope every stat to the Library's current content type (Manga / Anime /
+    // Light Novels) so the numbers match what the user is looking at.
+    final type = context.watch<LibraryTypeProvider>().type;
+    final sp = context.read<SourceProvider>();
+
+    List<LibraryManga> ofType(List<LibraryManga> all) => all.where((m) {
+          final t = sp.getInstalledSource(m.sourceId)?.source.itemType ?? 'manga';
+          return t == type;
+        }).toList();
 
     if (isVault) {
       return Consumer<VaultProvider>(
-        builder: (_, vault, __) =>
-            _StatsContent(manga: vault.manga, fadeAnim: _fadeAnim, isVault: true),
+        builder: (_, vault, __) {
+          final manga = ofType(vault.manga);
+          return _StatsContent(
+            manga: manga,
+            // Reading streak / heatmap count only this type's chapters. Taking
+            // the ids from the already-filtered list keeps orphaned-source
+            // entries under Manga, matching the library view.
+            sourceIds: manga.map((m) => m.sourceId).toSet(),
+            contentType: type,
+            fadeAnim: _fadeAnim,
+            isVault: true,
+          );
+        },
       );
     }
 
     return Consumer<LibraryProvider>(
-      builder: (_, library, __) =>
-          _StatsContent(manga: library.manga, fadeAnim: _fadeAnim, isVault: false),
+      builder: (_, library, __) {
+        final manga = ofType(library.manga);
+        return _StatsContent(
+          manga: manga,
+          sourceIds: manga.map((m) => m.sourceId).toSet(),
+          contentType: type,
+          fadeAnim: _fadeAnim,
+          isVault: false,
+        );
+      },
     );
   }
 }
 
 class _StatsContent extends StatelessWidget {
   final List<LibraryManga> manga;
+  final Set<String> sourceIds;
+  final String contentType;
   final Animation<double> fadeAnim;
   final bool isVault;
 
   const _StatsContent({
     required this.manga,
+    required this.sourceIds,
+    required this.contentType,
     required this.fadeAnim,
     required this.isVault,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (manga.isEmpty) return _EmptyStatsView(isVault: isVault);
+    if (manga.isEmpty) {
+      return _EmptyStatsView(isVault: isVault, contentType: contentType);
+    }
 
     final totalChapters = manga.fold(0, (sum, m) => sum + m.totalChapters);
     final readChapters = manga.fold(0, (sum, m) => sum + m.readChapters);
@@ -93,14 +129,14 @@ class _StatsContent extends StatelessWidget {
     final Map<DateTime, int> activity;
     if (isVault) {
       final vault = context.read<VaultProvider>();
-      currentStreak = vault.getCurrentReadingStreak();
-      longestStreak = vault.getLongestReadingStreak();
-      activity = vault.getReadActivityByDay(days: 35);
+      currentStreak = vault.getCurrentReadingStreak(sourceIds: sourceIds);
+      longestStreak = vault.getLongestReadingStreak(sourceIds: sourceIds);
+      activity = vault.getReadActivityByDay(days: 35, sourceIds: sourceIds);
     } else {
       final library = context.read<LibraryProvider>();
-      currentStreak = library.getCurrentReadingStreak();
-      longestStreak = library.getLongestReadingStreak();
-      activity = library.getReadActivityByDay(days: 35);
+      currentStreak = library.getCurrentReadingStreak(sourceIds: sourceIds);
+      longestStreak = library.getLongestReadingStreak(sourceIds: sourceIds);
+      activity = library.getReadActivityByDay(days: 35, sourceIds: sourceIds);
     }
 
     final cs = Theme.of(context).colorScheme;
@@ -142,7 +178,9 @@ class _StatsContent extends StatelessWidget {
             _LibraryBreakdownCard(
               statusCounts: statusCounts,
               total: manga.length,
-              label: isVault ? 'Vault Breakdown' : 'Library Breakdown',
+              label: isVault
+                  ? 'Vault Breakdown'
+                  : '${LibraryTypeProvider.label(contentType)} Breakdown',
             ),
             const SizedBox(height: 16),
           ],
@@ -157,11 +195,13 @@ class _StatsContent extends StatelessWidget {
 // ── Empty State ──────────────────────────────────────────────
 class _EmptyStatsView extends StatelessWidget {
   final bool isVault;
-  const _EmptyStatsView({this.isVault = false});
+  final String contentType;
+  const _EmptyStatsView({this.isVault = false, this.contentType = 'manga'});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final word = LibraryTypeProvider.label(contentType).toLowerCase();
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -182,8 +222,8 @@ class _EmptyStatsView extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               isVault
-                  ? 'Add manga to your vault and start reading to see stats here.'
-                  : 'Add manga to your library and start reading to see your stats here.',
+                  ? 'Add $word to your vault and start reading to see stats here.'
+                  : 'Add $word to your library and start reading to see your stats here.',
               textAlign: TextAlign.center,
               style: GoogleFonts.manrope(fontSize: 13, color: cs.outline),
             ),

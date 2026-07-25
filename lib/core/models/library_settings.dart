@@ -51,6 +51,12 @@ class LibrarySettings {
   final bool badgeDownloaded;
   final bool showTabCounts;
 
+  // Read-only mirror of a setting owned by the Settings > Library page (written
+  // there under 'lib_hide_empty_cats'). Loaded here so the library screen, which
+  // already consumes this model, can act on it. Not written by [save] — the
+  // settings page is the single writer.
+  final bool hideEmptyCategories;
+
   const LibrarySettings({
     this.filterUnread = false,
     this.filterCompleted = false,
@@ -63,6 +69,7 @@ class LibrarySettings {
     this.badgeUnread = true,
     this.badgeDownloaded = true,
     this.showTabCounts = false,
+    this.hideEmptyCategories = false,
   });
 
   bool get hasActiveFilter =>
@@ -89,6 +96,7 @@ class LibrarySettings {
     bool? badgeUnread,
     bool? badgeDownloaded,
     bool? showTabCounts,
+    bool? hideEmptyCategories,
   }) {
     return LibrarySettings(
       filterUnread: filterUnread ?? this.filterUnread,
@@ -102,6 +110,7 @@ class LibrarySettings {
       badgeUnread: badgeUnread ?? this.badgeUnread,
       badgeDownloaded: badgeDownloaded ?? this.badgeDownloaded,
       showTabCounts: showTabCounts ?? this.showTabCounts,
+      hideEmptyCategories: hideEmptyCategories ?? this.hideEmptyCategories,
     );
   }
 
@@ -136,6 +145,7 @@ class LibrarySettings {
       badgeUnread: p.getBool(_kBadgeUnread) ?? true,
       badgeDownloaded: p.getBool(_kBadgeDownloaded) ?? true,
       showTabCounts: p.getBool(_kTabCounts) ?? false,
+      hideEmptyCategories: p.getBool('lib_hide_empty_cats') ?? false,
     );
   }
 

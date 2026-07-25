@@ -306,9 +306,11 @@ class VaultProvider extends ChangeNotifier {
   }
 
   // ── Reading stats ──────────────────────────────────────────────────
-  Map<DateTime, int> getReadActivityByDay({int days = 365}) =>
-      _vaultService.getReadActivityByDay(days: days);
+  Map<DateTime, int> getReadActivityByDay({int days = 365, Set<String>? sourceIds}) =>
+      _vaultService.getReadActivityByDay(days: days, sourceIds: sourceIds);
 
-  int getCurrentReadingStreak() => _vaultService.getCurrentReadingStreak();
-  int getLongestReadingStreak() => _vaultService.getLongestReadingStreak();
+  int getCurrentReadingStreak({Set<String>? sourceIds}) =>
+      _vaultService.getCurrentReadingStreak(sourceIds: sourceIds);
+  int getLongestReadingStreak({Set<String>? sourceIds}) =>
+      _vaultService.getLongestReadingStreak(sourceIds: sourceIds);
 }

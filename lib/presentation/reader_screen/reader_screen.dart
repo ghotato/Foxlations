@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/providers/source_provider.dart';
 import '../../core/providers/reader_provider.dart';
 import '../../core/providers/library_provider.dart';
@@ -102,6 +103,9 @@ class _ReaderBodyState extends State<_ReaderBody>
   int _sliderPage = 0; // Tracks slider position during drag
   bool _isInteracting = false; // User is touching HUD elements
   bool _sliderInitialized = false; // One-time sync after pages load
+  // Last wakelock state we pushed to the OS, so build() only calls the plugin
+  // when the "Keep Screen On" setting actually changes rather than every frame.
+  bool? _wakelockApplied;
 
   // Translation state
   bool _translationEnabled = false; // loaded from settings
@@ -190,7 +194,21 @@ class _ReaderBodyState extends State<_ReaderBody>
     _scrollController?.dispose();
     _translationAnimController.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    // Never leave the wakelock held once the reader is gone.
+    if (_wakelockApplied == true) {
+      WakelockPlus.disable().catchError((_) {});
+    }
     super.dispose();
+  }
+
+  /// Enables/disables the OS keep-awake lock to match [on], but only when the
+  /// desired state differs from what we last pushed — build() runs on every
+  /// frame and the plugin call is a platform round-trip. Wrapped so an
+  /// unsupported platform (or a transient failure) can never crash the reader.
+  void _applyWakelock(bool on) {
+    if (_wakelockApplied == on) return;
+    _wakelockApplied = on;
+    WakelockPlus.toggle(enable: on).catchError((_) {});
   }
 
   void _toggleHud(ReaderProvider reader) {
@@ -229,6 +247,9 @@ class _ReaderBodyState extends State<_ReaderBody>
         SystemChrome.setEnabledSystemUIMode(reader.settings.fullscreen
             ? SystemUiMode.immersiveSticky
             : SystemUiMode.edgeToEdge);
+        // Keep the screen awake while reading if enabled. Guarded so it only
+        // hits the plugin when the setting changes.
+        _applyWakelock(reader.settings.keepScreenOn);
         final onBg = _onBgFor(reader.settings.bgColor, context);
         _onBg = onBg;
         return Scaffold(

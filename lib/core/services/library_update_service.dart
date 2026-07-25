@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:battery_plus/battery_plus.dart';
 import '../models/manga_model.dart';
 import '../models/source_settings.dart';
 import '../providers/library_provider.dart';
@@ -83,10 +85,18 @@ class LibraryUpdateService {
     final newUpdates = <MangaUpdate>[];
     int checked = 0;
 
+    // Settings > Library > "Skip titles you haven't started". readChapters == 0
+    // means the user has never opened a chapter, so there's nothing to catch up
+    // on — checking it just spends network on titles they may never read.
+    final prefs = await SharedPreferences.getInstance();
+    final skipNotStarted = prefs.getBool('lib_skip_not_started') ?? false;
+
     for (final m in manga) {
       try {
         // Honour the per-source "Skip in library updates" option.
         if (SourceSettings.cached(m.sourceId).excludeFromUpdates) continue;
+        // Honour the global "Skip not-started titles" option.
+        if (skipNotStarted && m.readChapters <= 0) continue;
         final installed = sourceProvider.getInstalledSource(m.sourceId);
         if (installed == null) continue;
 
@@ -129,8 +139,7 @@ class LibraryUpdateService {
       onProgress?.call(checked, manga.length);
     }
 
-    // Save timestamp
-    final prefs = await SharedPreferences.getInstance();
+    // Save timestamp (reuses the `prefs` opened at the top of this method).
     await prefs.setInt(_lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
 
     // Merge with existing, keep max 500
@@ -148,6 +157,72 @@ class LibraryUpdateService {
   static Future<void> clearUpdates() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_updatesKey);
+  }
+
+  // ── Automatic updates ──────────────────────────────────────────────────────
+  // Foreground scheduler: the app checks on launch and on resume whether an
+  // update is due. This deliberately does NOT run a true OS background task
+  // (Android WorkManager / iOS BGTaskScheduler need native setup and are a
+  // separate piece of work); the trade-off is that updates happen while the app
+  // is open rather than while it's closed, which is enough to honour the
+  // frequency / Wi-Fi / charging preferences the settings screen exposes.
+
+  /// Interval for a "Update frequency" label, or null for "Manual" (never auto).
+  static Duration? _frequencyInterval(String label) {
+    switch (label) {
+      case 'Every 12 hours':
+        return const Duration(hours: 12);
+      case 'Daily':
+        return const Duration(days: 1);
+      case 'Every 2 days':
+        return const Duration(days: 2);
+      case 'Weekly':
+        return const Duration(days: 7);
+      default:
+        return null; // 'Manual'
+    }
+  }
+
+  /// Whether an automatic library update is due right now, honouring the
+  /// frequency, "Wi-Fi only" and "Only while charging" settings.
+  ///
+  /// Constraints fail CLOSED: if the network or battery state can't be read, or
+  /// doesn't satisfy a required condition, we skip rather than risk updating on
+  /// cellular / on battery against the user's wishes.
+  static Future<bool> shouldAutoUpdate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final interval =
+        _frequencyInterval(prefs.getString('lib_update_frequency') ?? 'Manual');
+    if (interval == null) return false; // Manual — never auto-update.
+
+    final last = await getLastUpdate();
+    if (last != null && DateTime.now().difference(last) < interval) {
+      return false; // Checked recently enough.
+    }
+
+    if (prefs.getBool('lib_update_wifi_only') ?? true) {
+      try {
+        final conn = await Connectivity().checkConnectivity();
+        final onWifi = conn.contains(ConnectivityResult.wifi) ||
+            conn.contains(ConnectivityResult.ethernet);
+        if (!onWifi) return false;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (prefs.getBool('lib_update_charging_only') ?? false) {
+      try {
+        final state = await Battery().batteryState;
+        final charging = state == BatteryState.charging ||
+            state == BatteryState.full;
+        if (!charging) return false;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   static Future<int> getUnreadCount() async {

@@ -56,6 +56,31 @@ class PortablePath {
 
   static Future<bool> _exists(String path) async {
     if (path.isEmpty) return false;
-    return await Directory(path).exists() || await File(path).exists();
+    // A `file://` URI is not a valid argument to File()/Directory(). On Windows,
+    // File('file://D:/x').exists() throws PathNotFoundException (ERROR_INVALID_NAME,
+    // errno 123) rather than returning false — which is exactly what a stale
+    // local-repo entry saved as `file://D:/…/index.json` did: it crashed every
+    // repo resolve, and with it any "Create Source" save. Normalise the scheme
+    // off first, and treat any path the OS rejects as simply "not there".
+    final fsPath = _toFilePath(path);
+    try {
+      return await Directory(fsPath).exists() || await File(fsPath).exists();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Strips a `file://` scheme to a plain filesystem path. A bare path is
+  /// returned unchanged.
+  static String _toFilePath(String path) {
+    if (!path.startsWith('file://')) return path;
+    try {
+      final uri = path.startsWith('file:///')
+          ? Uri.parse(path)
+          : Uri.parse(path.replaceFirst('file://', 'file:///'));
+      return uri.toFilePath();
+    } catch (_) {
+      return path.replaceFirst(RegExp(r'^file:/+'), '');
+    }
   }
 }

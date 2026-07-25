@@ -88,11 +88,42 @@ class AiTranslationService {
   static const _maxCacheSize = 50;
   final Map<String, TranslationResult> _cache = {};
 
+  /// Per-request output token budget for the LLM providers, set from the
+  /// "Translation quality" setting at the top of each [translatePage]. A field
+  /// rather than a threaded parameter so the individual _translateWith* methods
+  /// stay untouched; pages translate one quality at a time so this is safe.
+  int _maxTokens = 4096;
+
   Future<(String provider, String apiKey)> _getConfig() async {
     final prefs = await SharedPreferences.getInstance();
+    // "Offline Mode" (Settings > AI) forces the on-device ML Kit translator no
+    // matter which provider is selected, so translation works with no network
+    // and no API key. ML Kit only runs on Android/iOS; on desktop this simply
+    // yields nothing rather than reaching out to a cloud API.
+    if (prefs.getBool('offline_translation') ?? false) {
+      return ('mlkit', '');
+    }
     final provider = prefs.getString('ai_provider') ?? 'gemini';
     final apiKey = prefs.getString('api_key_$provider') ?? '';
     return (provider, apiKey);
+  }
+
+  /// Cap on translated characters per request, from Settings > AI >
+  /// "Translation quality". Mapped to a token budget rather than swapping the
+  /// model, so a higher tier can't accidentally name a model the user's API key
+  /// has no access to (which would fail the whole translation). Higher = fuller
+  /// output on dense pages; lower = faster and cheaper.
+  Future<int> _maxTokensForQuality() async {
+    final prefs = await SharedPreferences.getInstance();
+    switch (prefs.getString('ai_translation_quality') ?? 'balanced') {
+      case 'fast':
+        return 2048;
+      case 'best':
+        return 8192;
+      case 'balanced':
+      default:
+        return 4096;
+    }
   }
 
   Future<String> _getTargetLanguage() async {
@@ -188,8 +219,18 @@ class AiTranslationService {
 
     // Phase 1: ML Kit on-device detection for pixel-accurate bounding boxes.
     // Use only the configured source language script (not all 4) to avoid noise.
+    //
+    // "Bubble detection" (Settings > AI): when on, ML Kit finds precise text
+    // boxes to translate in place; when off, we hand the whole page to the LLM
+    // and let it locate text itself (LLM-only mode). The on-device 'mlkit'
+    // provider has nothing to translate without boxes, so it always detects
+    // regardless of the toggle.
+    final prefs = await SharedPreferences.getInstance();
+    final bubbleDetection = prefs.getBool('ai_bubble_detection') ?? true;
+    _maxTokens = await _maxTokensForQuality();
     List<_DetectedRegion> mlkitRegions = [];
-    if (Platform.isAndroid || Platform.isIOS) {
+    if ((Platform.isAndroid || Platform.isIOS) &&
+        (bubbleDetection || provider == 'mlkit')) {
       try {
         mlkitRegions = await _detectTextRegions(imageBytes, sourceLang);
         debugPrint('[AI] ML Kit detected ${mlkitRegions.length} regions (source: $sourceLang)');
@@ -581,7 +622,11 @@ class AiTranslationService {
   Future<List<TranslatedRegion>> _translateWithGemini(
       Uint8List imageBytes, String apiKey, String targetLang,
       List<_DetectedRegion> mlkitRegions) async {
-    final model = GenerativeModel(model: 'gemini-2.0-flash', apiKey: apiKey);
+    final model = GenerativeModel(
+      model: 'gemini-2.0-flash',
+      apiKey: apiKey,
+      generationConfig: GenerationConfig(maxOutputTokens: _maxTokens),
+    );
     final prompt = _buildPrompt(targetLang, mlkitRegions);
     final content = Content.multi([TextPart(prompt), DataPart('image/jpeg', imageBytes)]);
     final response = await model.generateContent([content]);
@@ -600,7 +645,7 @@ class AiTranslationService {
         {'type': 'text', 'text': _buildPrompt(targetLang, mlkitRegions)},
         {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,$b64Image'}},
       ]}],
-      'max_tokens': 4096,
+      'max_tokens': _maxTokens,
     });
     final responseBody = await _postJson(
       'https://api.openai.com/v1/chat/completions',
@@ -617,7 +662,7 @@ class AiTranslationService {
     final b64Image = base64Encode(imageBytes);
     final body = jsonEncode({
       'model': 'claude-sonnet-4-20250514',
-      'max_tokens': 4096,
+      'max_tokens': _maxTokens,
       'messages': [{'role': 'user', 'content': [
         {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': b64Image}},
         {'type': 'text', 'text': _buildPrompt(targetLang, mlkitRegions)},
@@ -654,7 +699,7 @@ class AiTranslationService {
         {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,$b64Image'}},
         {'type': 'text', 'text': _buildPrompt(targetLang, mlkitRegions)},
       ]}],
-      'max_tokens': 2048,
+      'max_tokens': _maxTokens,
     });
     final responseBody = await _postJson(
       'https://api-inference.huggingface.co/models/Qwen/Qwen2.5-VL-7B-Instruct/v1/chat/completions',

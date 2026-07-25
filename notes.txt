@@ -24,6 +24,9 @@ Windows
   of "manga_reader", and keeps its library in the app's own private data folder
   instead of dropping files into your Documents. If an earlier Windows build
   left library files in Documents, they're no longer used — see below.
+- Fixed: creating a source with the Scraping Studio could fail with a path error
+  on Windows if a stale local-repo entry was still saved. Repo paths are handled
+  safely now and a broken one is skipped instead of blocking the save.
 
 Sources
 - Fixed: sources on a site that files its titles under something other than
@@ -31,7 +34,28 @@ Sources
   and came up empty. They now read the right one, and four new manhwa and
   manga sources that needed it have been added to the Foxlations repo.
 
+Settings that now do something
+- "Keep screen on" in the reader now actually holds the screen awake while you
+  read (Android and iOS).
+- Automatic library updates work now. Pick a frequency in Settings > Library
+  (every 12 hours, daily, and so on), optionally only on Wi-Fi and/or only while
+  charging. The check runs when you open Foxlations and when you return to it —
+  it's a while-the-app-is-open schedule, not a true background task.
+- "Hide empty categories", "Show update count" and "Skip titles you haven't
+  started" now take effect instead of being saved and ignored.
+- AI translation: "Offline Mode" forces the on-device translator (no network,
+  no API key needed); "Bubble detection" and "Translation quality" now change
+  how a page is translated.
+- The AI "Models" tab is a real offline-model manager now — download or delete
+  Google's on-device translation languages, replacing the old mock list whose
+  buttons only said "coming soon".
+
 Library
+- Long-press the Library tab to switch it between Manga, Anime and Light
+  Novels. A small picker styled like the bottom bar pops up; your choice sticks
+  after you leave or close the app, and the Library icon changes to match. The
+  library grid and the Stats page both follow the choice, so each type has its
+  own totals, breakdown and reading streak.
 - Fixed: when a title had more categories than fit on screen, the "Add to
   Category" and "Edit Categories" sheets couldn't scroll, leaving the Save
   button off-screen. The list now scrolls and Save stays reachable.

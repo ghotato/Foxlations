@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
+import 'library_type_menu.dart' show libraryTypeIcon;
 
 class AppNavigation extends StatefulWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
   final bool isVaultMode;
   final int updatesBadge;
+  /// Current Library content type ('manga' | 'anime' | 'novel'); the Library
+  /// tab's icon reflects it. Ignored while [isVaultMode] is on.
+  final String contentType;
+  /// Invoked when the Library tab is long-pressed — opens the content-type menu.
+  final VoidCallback? onLibraryLongPress;
 
   const AppNavigation({
     super.key,
@@ -14,6 +20,8 @@ class AppNavigation extends StatefulWidget {
     required this.onTap,
     this.isVaultMode = false,
     this.updatesBadge = 0,
+    this.contentType = 'manga',
+    this.onLibraryLongPress,
   });
 
   @override
@@ -141,6 +149,12 @@ class _AppNavigationState extends State<AppNavigation>
                     icon = Icons.shield_outlined;
                     activeIcon = Icons.shield_rounded;
                     label = 'Vault';
+                  } else if (index == 0) {
+                    // Library tab shows the icon for the selected content type
+                    // (Manga / Anime / Light Novels); the label stays "Library".
+                    icon = libraryTypeIcon(widget.contentType);
+                    activeIcon = libraryTypeIcon(widget.contentType, active: true);
+                    label = item.label;
                   } else {
                     icon = item.icon;
                     activeIcon = item.activeIcon;
@@ -149,6 +163,8 @@ class _AppNavigationState extends State<AppNavigation>
                   return Expanded(
                     child: GestureDetector(
                       onTap: () => widget.onTap(index),
+                      onLongPress:
+                          index == 0 ? widget.onLibraryLongPress : null,
                       behavior: HitTestBehavior.opaque,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -160,7 +176,8 @@ class _AppNavigationState extends State<AppNavigation>
                                 duration: AppTheme.fastMicro,
                                 child: Icon(
                                   isActive ? activeIcon : icon,
-                                  key: ValueKey('${isActive}_${widget.isVaultMode}'),
+                                  key: ValueKey(
+                                      '${isActive}_${widget.isVaultMode}_${index == 0 ? widget.contentType : ''}'),
                                   size: 22,
                                   color: isActive ? cs.primary : cs.outline,
                                 ),

@@ -13,6 +13,13 @@ import '../presentation/source_creator_screen/source_creator_screen.dart';
 import '../presentation/repoforge_hub_screen/repoforge_hub_screen.dart';
 import '../presentation/novel_reader_screen/novel_reader_screen.dart';
 
+/// Lets a screen know when a route pushed on top of it (e.g. a settings page)
+/// has been popped, so it can re-read preferences that page may have changed.
+/// The library screen subscribes to pick up Settings > Library changes without
+/// an app restart.
+final RouteObserver<PageRoute<dynamic>> routeObserver =
+    RouteObserver<PageRoute<dynamic>>();
+
 class AppRoutes {
   static const String library = '/';
   static const String updates = '/updates';

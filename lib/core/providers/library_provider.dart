@@ -164,9 +164,11 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   // ── Reading stats ──────────────────────────────────────────────────
-  Map<DateTime, int> getReadActivityByDay({int days = 365}) =>
-      _libraryService.getReadActivityByDay(days: days);
+  Map<DateTime, int> getReadActivityByDay({int days = 365, Set<String>? sourceIds}) =>
+      _libraryService.getReadActivityByDay(days: days, sourceIds: sourceIds);
 
-  int getCurrentReadingStreak() => _libraryService.getCurrentReadingStreak();
-  int getLongestReadingStreak() => _libraryService.getLongestReadingStreak();
+  int getCurrentReadingStreak({Set<String>? sourceIds}) =>
+      _libraryService.getCurrentReadingStreak(sourceIds: sourceIds);
+  int getLongestReadingStreak({Set<String>? sourceIds}) =>
+      _libraryService.getLongestReadingStreak(sourceIds: sourceIds);
 }

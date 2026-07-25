@@ -8,6 +8,7 @@ import '../widgets/manga_image.dart';
 import '../../core/providers/library_provider.dart';
 import '../../core/providers/vault_provider.dart';
 import '../../core/providers/source_provider.dart';
+import '../../core/providers/library_type_provider.dart';
 import '../../core/services/library_update_service.dart';
 import '../../core/models/library_settings.dart';
 import '../../core/utils/library_query.dart';
@@ -42,7 +43,7 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware {
   bool _isSearchActive = false;
   String _searchQuery = '';
   /// Derived from the Display tab so the sheet and the toolbar toggle can't
@@ -69,7 +70,19 @@ class _LibraryScreenState extends State<LibraryScreen>
   // Helpers to get data from the active provider (vault or normal)
   List<LibraryManga> _activeManga(BuildContext context) {
     final vault = context.read<VaultProvider>();
-    return vault.vaultActive ? vault.manga : context.read<LibraryProvider>().manga;
+    final all = vault.vaultActive
+        ? vault.manga
+        : context.read<LibraryProvider>().manga;
+    // Filter to the content type chosen from the Library tab's long-press menu.
+    // Each entry's type is its source's itemType; an entry whose source is gone
+    // (uninstalled / orphaned) defaults to 'manga' so it doesn't silently
+    // vanish from every view.
+    final type = context.read<LibraryTypeProvider>().type;
+    final sp = context.read<SourceProvider>();
+    return all.where((m) {
+      final t = sp.getInstalledSource(m.sourceId)?.source.itemType ?? 'manga';
+      return t == type;
+    }).toList();
   }
 
   List<String> _activeCategoryNames(BuildContext context) {
@@ -127,6 +140,18 @@ class _LibraryScreenState extends State<LibraryScreen>
     final s = await LibrarySettings.load();
     if (mounted) setState(() => _librarySettings = s);
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) routeObserver.subscribe(this, route);
+  }
+
+  // Returning from Settings > Library (a pushed route) — re-read the display
+  // preferences it may have changed, e.g. "Hide empty categories".
+  @override
+  void didPopNext() => _loadLibrarySettings();
 
   void _applyLibrarySettings(LibrarySettings next) {
     setState(() => _librarySettings = next);
@@ -311,6 +336,7 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -731,6 +757,10 @@ class _LibraryScreenState extends State<LibraryScreen>
     final cs = Theme.of(context).colorScheme;
     final columnCount = _getColumnCount(context);
     final isVault = _isVaultMode;
+    // Depend on the content type so switching Manga/Anime/Novels (from the
+    // Library tab's long-press menu) rebuilds the whole screen and re-filters
+    // every list below via _activeManga.
+    context.watch<LibraryTypeProvider>();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -770,9 +800,19 @@ class _LibraryScreenState extends State<LibraryScreen>
                     // Category tabs with bookmark toggle
                     Consumer2<LibraryProvider, VaultProvider>(
                       builder: (_, library, vault, __) {
-                        final cats = vault.vaultActive
+                        final activeManga =
+                            vault.vaultActive ? vault.manga : library.manga;
+                        var cats = vault.vaultActive
                             ? vault.categories.map((c) => c.name).toList()
                             : library.categories.map((c) => c.name).toList();
+                        // "Hide empty categories" (Settings > Library): drop any
+                        // tab no library entry is filed under.
+                        if (_librarySettings.hideEmptyCategories) {
+                          final used = <String>{
+                            for (final m in activeManga) ...m.categories,
+                          };
+                          cats = cats.where(used.contains).toList();
+                        }
                         // Auto-select first category if none selected, or if
                         // the current selection isn't valid in the active mode
                         // (e.g. after toggling vault, the previous mode's

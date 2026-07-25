@@ -239,6 +239,20 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _ChangelogItem('Long-press the Library tab to switch it between '
+                'Manga, Anime and Light Novels. The picker looks like the bottom '
+                'bar, your choice is remembered, and the Library icon updates to '
+                'match. The library and the Stats page both follow the selection, '
+                'so each type keeps its own totals, breakdown and reading streak.'),
+            _ChangelogItem('Several settings that were saved but did nothing now '
+                'work: "Keep screen on" in the reader; automatic library updates '
+                '(frequency, Wi-Fi only, only while charging) while the app is '
+                'open; "Hide empty categories", "Show update count" and "Skip '
+                'not-started titles"; and the AI "Offline Mode", "Bubble '
+                'detection" and "Translation quality" options.'),
+            _ChangelogItem('The AI Models tab is now a real offline-model manager '
+                '— download or delete Google\'s on-device translation languages, '
+                'replacing the old placeholder list.'),
             _ChangelogItem('Foxlations now builds for Windows, alongside Android '
                 'and iOS. It is the full app, Cloudflare checks included — the '
                 'one thing missing is on-device text recognition and offline '
@@ -246,6 +260,10 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
             _ChangelogItem('Windows: the app now shows as Foxlations (window and '
                 'Foxlations.exe) rather than manga_reader, and stores its library '
                 'in its own private data folder instead of your Documents folder.'),
+            _ChangelogItem('Fixed: creating a source could fail with a path error '
+                'on Windows when an old local repo entry was still saved. Repo '
+                'paths are now handled safely and a bad one is skipped instead of '
+                'stopping the save.'),
             _ChangelogItem('Fixed: sources on a site that files its titles under '
                 'something other than /manga/ — /title/, /comic/, /webtoon/ and '
                 'so on — browsed the wrong address and came up empty. They now '

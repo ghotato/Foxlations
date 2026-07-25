@@ -1,7 +1,7 @@
 name: manga_reader
 description: A manga reading app with extension-based sources.
 publish_to: 'none'
-version: 0.2.17+41
+version: 0.2.18+42
 
 environment:
   sdk: ^3.11.3
@@ -56,7 +56,6 @@ dependencies:
   sizer: ^2.0.15
   google_fonts: ^6.1.0
   cached_network_image: ^3.3.1
-  photo_view: ^0.15.0
 
   # Video playback
   media_kit: ^1.1.10
@@ -70,6 +69,11 @@ dependencies:
   scrollable_positioned_list: ^0.3.8
   file_picker: ^11.0.2
   archive: ^4.0.9
+  # Keep-screen-on in the reader, and the network/battery constraints the
+  # library auto-update scheduler checks (Wi-Fi only / charging only).
+  wakelock_plus: ^1.2.8
+  connectivity_plus: ^6.1.0
+  battery_plus: ^6.0.1
   google_generative_ai: ^0.4.7
   google_mlkit_text_recognition: ^0.14.0
   google_mlkit_translation: ^0.12.0

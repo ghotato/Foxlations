@@ -10,68 +10,14 @@ class SourceManager {
   static const _installedKey = 'installed_sources_v1';
   static const _sourceCodePrefix = 'source_code_';
 
-  /// Dev mode: override source code with local file paths.
-  /// Set to null or empty map to disable.
-  static const _mangaboxFw =
-      'D:/projects/foxlations-extensions/dart/manga/multisrc/mangabox/mangabox.dart';
-  static const _madaraFw =
-      'D:/projects/foxlations-extensions/dart/manga/multisrc/madara/madara.dart';
-  static const _mangathemesiaFw =
-      'D:/projects/foxlations-extensions/dart/manga/multisrc/mangathemesia/mangathemesia.dart';
-
-  static const _animeBase =
-      'D:/projects/foxlations-extensions/dart/anime/src';
-
-  static const Map<String, String> _devOverrides = {
-    // MangaBox framework
-    'manganato-en': _mangaboxFw,
-    'mangabat-en': _mangaboxFw,
-    'mangakakalot-en': _mangaboxFw,
-    // MangaThemesia framework
-    'ravenscans-en': _mangathemesiaFw,
-    'infernalvoid-en': _mangathemesiaFw,
-    // Madara framework (every madara source resolves to the same file)
-    'coffeemanga-en': _madaraFw,
-    'dragontea-en': _madaraFw,
-    'harimanga-en': _madaraFw,
-    'mangagalaxy-en': _madaraFw,
-    'mangaclash-en': _madaraFw,
-    'mangakomi-en': _madaraFw,
-    'mangasushi-en': _madaraFw,
-    'manhuaus-en': _madaraFw,
-    'manhwaclan-en': _madaraFw,
-    'pmscans-en': _madaraFw,
-    'readmanhua-en': _madaraFw,
-    's2manga-en': _madaraFw,
-    'tappytoon-en': _madaraFw,
-    // Manga custom sources
-    'asurascans-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/asurascans/asurascans.dart',
-    'flamecomics-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/flamecomics/flamecomics.dart',
-    'kemono-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/kemono/kemono.dart',
-    'coomer-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/coomer/coomer.dart',
-    'webtoons-en': 'D:/projects/foxlations-extensions/dart/manga/src/multi/webtoons/webtoons.dart',
-    'mangafire-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/mangafire/mangafire.dart',
-    'mangageko-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/mangageko/mangageko.dart',
-    'luscious-en': 'D:/projects/foxlations-extensions/dart/manga/src/en/luscious/luscious.dart',
-    'naver-ko': 'D:/projects/foxlations-extensions/dart/manga/src/ko/naver/naver.dart',
-    'hitomi-all': 'D:/projects/foxlations-extensions/dart/manga/src/all/hitomi/hitomi.dart',
-    // Anime sources
-    'allanime-en': '$_animeBase/en/allanime/allanime.dart',
-    'animepahe-en': '$_animeBase/en/animepahe/animepahe.dart',
-    'hahomoe-en': '$_animeBase/en/hahomoe/hahomoe.dart',
-    'hanime-en': '$_animeBase/en/hanime/hanime.dart',
-    'hianime-en': '$_animeBase/en/hianime/hianime.dart',
-    'hstream-en': '$_animeBase/en/hstream/hstream.dart',
-    'jable-all': '$_animeBase/all/jable/jable.dart',
-    'kawaiifu-en': '$_animeBase/en/kawaiifu/kawaiifu.dart',
-    'missav-all': '$_animeBase/all/missav/missav.dart',
-    'newgrounds-en': '$_animeBase/en/newgrounds/newgrounds.dart',
-    'oppaistream-en': '$_animeBase/en/oppaistream/oppaistream.dart',
-    'rule34video-en': '$_animeBase/en/rule34video/rule34video.dart',
-    'supjav-all': '$_animeBase/all/supjav/supjav.dart',
-    'xnxx-all': '$_animeBase/all/xnxx/xnxx.dart',
-    'xvideos-all': '$_animeBase/all/xvideos/xvideos.dart',
-  };
+  /// Dev-only hot-loading of source code from a local checkout, keyed by source
+  /// id. MUST be empty in shipped builds: it previously held a developer's
+  /// Windows checkout paths (D:/projects/foxlations-extensions/…), which don't
+  /// exist on any user's machine. Those entries were guarded by File.exists()
+  /// so they failed silently — but they are exactly the kind of hardcoded path
+  /// that has no business in a release, so they're gone. Sources load from
+  /// their repo's sourceCodeUrl instead.
+  static const Map<String, String> _devOverrides = <String, String>{};
 
   final Dio _dio;
   List<InstalledSource> _installed = [];
