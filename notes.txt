@@ -1,61 +1,16 @@
-RepoForge builds working sources for far more sites, plus better site
-detection and a category-picker fix.
+Separate Manga / Anime / Light Novel libraries with a bubble picker, and
+RepoForge can now build sources for API-backed sites like Asura Scans.
 
-Sources (RepoForge)
-- RepoForge now builds a source tailored to a site's engine instead of one
-  generic template. Manga and novels: Madara, MangaThemesia, MMRCMS,
-  FlameComics and LightNovel-WP. Anime: DooPlay, AnimeStream, HiAnime-style
-  (Zorotheme) and FlixHQ (DopeFlix). The generic version couldn't load their
-  chapters, pages or episode video; the tailored ones do — and anime embeds are
-  handed to the built-in host extractors, now including MegaCloud (the host
-  behind HiAnime). A generated Madara source was verified pulling full chapter
-  lists and pages from a live site.
-- RepoForge recognises many more site engines — seven additional manga themes
-  and stronger anime fingerprints — so a site is detected correctly more often
-  instead of falling back to a generic guess.
-- RepoForge is still beta: it won't always get a source perfect, so check what
-  it produces and tweak the selectors if a site doesn't come out right.
+Libraries
+- Manga, Anime and Light Novels are separate libraries, so things stay sorted
+  instead of piled together. Long-press the Library tab and a small bubble pops
+  up above it to switch between them; your choice sticks after you leave or
+  close the app. The Library tab icon, the "Add" button (Add Manga / Add Anime /
+  Add LNs) and the Stats page all follow the current library, so each keeps its
+  own titles, categories, totals and reading streak.
 
-Windows
-- Foxlations now builds for Windows, alongside Android and iOS. It is the full
-  app, Cloudflare checks included. The one thing missing is the on-device text
-  recognition and offline translation, which Google only provides on phones.
-- The Windows app now shows as "Foxlations" (window and Foxlations.exe) instead
-  of "manga_reader", and keeps its library in the app's own private data folder
-  instead of dropping files into your Documents. If an earlier Windows build
-  left library files in Documents, they're no longer used — see below.
-- Fixed: creating a source with the Scraping Studio could fail with a path error
-  on Windows if a stale local-repo entry was still saved. Repo paths are handled
-  safely now and a broken one is skipped instead of blocking the save.
-
-Sources
-- Fixed: sources on a site that files its titles under something other than
-  /manga/ — /title/, /comic/, /webtoon/ and so on — browsed the wrong address
-  and came up empty. They now read the right one, and four new manhwa and
-  manga sources that needed it have been added to the Foxlations repo.
-
-Settings that now do something
-- "Keep screen on" in the reader now actually holds the screen awake while you
-  read (Android and iOS).
-- Automatic library updates work now. Pick a frequency in Settings > Library
-  (every 12 hours, daily, and so on), optionally only on Wi-Fi and/or only while
-  charging. The check runs when you open Foxlations and when you return to it —
-  it's a while-the-app-is-open schedule, not a true background task.
-- "Hide empty categories", "Show update count" and "Skip titles you haven't
-  started" now take effect instead of being saved and ignored.
-- AI translation: "Offline Mode" forces the on-device translator (no network,
-  no API key needed); "Bubble detection" and "Translation quality" now change
-  how a page is translated.
-- The AI "Models" tab is a real offline-model manager now — download or delete
-  Google's on-device translation languages, replacing the old mock list whose
-  buttons only said "coming soon".
-
-Library
-- Long-press the Library tab to switch it between Manga, Anime and Light
-  Novels. A small picker styled like the bottom bar pops up; your choice sticks
-  after you leave or close the app, and the Library icon changes to match. The
-  library grid and the Stats page both follow the choice, so each type has its
-  own totals, breakdown and reading streak.
-- Fixed: when a title had more categories than fit on screen, the "Add to
-  Category" and "Edit Categories" sheets couldn't scroll, leaving the Save
-  button off-screen. The list now scrolls and Save stays reachable.
+RepoForge
+- RepoForge can now build a working source for sites that load their catalog
+  from a JSON API — like Asura Scans, which used to come up empty because
+  RepoForge only scraped the page HTML (those sites have none for it to read).
+  It recognises the API and generates a source that calls it directly.

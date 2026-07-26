@@ -760,7 +760,12 @@ class _LibraryScreenState extends State<LibraryScreen>
     // Depend on the content type so switching Manga/Anime/Novels (from the
     // Library tab's long-press menu) rebuilds the whole screen and re-filters
     // every list below via _activeManga.
-    context.watch<LibraryTypeProvider>();
+    final contentType = context.watch<LibraryTypeProvider>().type;
+    final addLabel = switch (contentType) {
+      'anime' => 'Add Anime',
+      'novel' => 'Add LNs',
+      _ => 'Add Manga',
+    };
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -944,7 +949,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                 onPressed: () =>
                     Navigator.pushNamed(context, AppRoutes.browse),
                 icon: const Icon(Icons.add_rounded, size: 20),
-                label: Text('Add Manga',
+                label: Text(addLabel,
                     style: GoogleFonts.manrope(
                         fontWeight: FontWeight.w700, fontSize: 13)),
                 backgroundColor: cs.primary,

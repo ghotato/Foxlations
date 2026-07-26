@@ -11,8 +11,9 @@ class AppNavigation extends StatefulWidget {
   /// Current Library content type ('manga' | 'anime' | 'novel'); the Library
   /// tab's icon reflects it. Ignored while [isVaultMode] is on.
   final String contentType;
-  /// Invoked when the Library tab is long-pressed — opens the content-type menu.
-  final VoidCallback? onLibraryLongPress;
+  /// Invoked when the Library tab is long-pressed, with the tab's global rect
+  /// so the content-type bubble can anchor itself just above it.
+  final void Function(Rect anchor)? onLibraryLongPress;
 
   const AppNavigation({
     super.key,
@@ -161,10 +162,20 @@ class _AppNavigationState extends State<AppNavigation>
                     label = item.label;
                   }
                   return Expanded(
-                    child: GestureDetector(
+                    child: Builder(
+                      builder: (itemContext) => GestureDetector(
                       onTap: () => widget.onTap(index),
-                      onLongPress:
-                          index == 0 ? widget.onLibraryLongPress : null,
+                      // Long-pressing Library opens the content-type bubble,
+                      // anchored to this tab's on-screen position.
+                      onLongPress: index == 0 && widget.onLibraryLongPress != null
+                          ? () {
+                              final box = itemContext.findRenderObject()
+                                  as RenderBox?;
+                              if (box == null || !box.hasSize) return;
+                              widget.onLibraryLongPress!(
+                                  box.localToGlobal(Offset.zero) & box.size);
+                            }
+                          : null,
                       behavior: HitTestBehavior.opaque,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -209,6 +220,7 @@ class _AppNavigationState extends State<AppNavigation>
                           ),
                         ],
                       ),
+                    ),
                     ),
                   );
                 }),

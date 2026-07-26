@@ -340,8 +340,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         isVaultMode: isVault,
         updatesBadge: _updatesBadge,
         contentType: contentType,
-        // Long-press the Library tab to switch between Manga / Anime / Novels.
-        onLibraryLongPress: () => showLibraryTypeMenu(context),
+        // Long-press the Library tab to switch between Manga / Anime / Novels;
+        // the bubble anchors just above the tab (anchor = its global rect).
+        onLibraryLongPress: (anchor) => showLibraryTypeBubble(context, anchor),
       ),
     );
   }

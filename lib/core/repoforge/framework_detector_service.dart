@@ -684,6 +684,9 @@ class FrameworkDetectorService {
     _FrameworkSig(name: 'FoOlSlide', patterns: ['div.group', '/directory/', 'div.meta_r', 'var pages = ['], confidence: 88, contentType: 'Manga', version: 'FoolSlide'),
     _FrameworkSig(name: 'GigaViewer', patterns: ['data-giga_series', 'pagination_readable_products', 'episode-json', 'series-header-title'], confidence: 95, contentType: 'Manga', version: 'GigaViewer'),
     _FrameworkSig(name: 'LibGroup API', patterns: ['api.cdnlibs.org', '/api/constants?fields', '/api/latest-updates', 'site_id[]='], confidence: 96, contentType: 'Manga', version: 'API'),
+    // Asura Scans: client-rendered, backed by api.asurascans.com. Its listing
+    // HTML is empty for scrapers, so it needs the API generation body.
+    _FrameworkSig(name: 'Asura API', patterns: ['api.asurascans.com', 'asuracomic', '/comics/'], confidence: 96, contentType: 'Manga', version: 'API'),
     _FrameworkSig(name: 'GroupLe', patterns: ['rm_h.readerInit', 'cr-hero-names__main', 'user_hash', 'sortType=updated'], confidence: 92, contentType: 'Manga', version: 'GroupLe'),
     _FrameworkSig(name: 'MCCMS', patterns: ['/api/data/comic?', '/api/data/chapter?mid=', 'order=addtime'], confidence: 93, contentType: 'Manga', version: 'MCCMS'),
     _FrameworkSig(name: 'SinMH', patterns: ['chapterImages = [', 'chapterPath =', 'book-title', 'contList'], confidence: 90, contentType: 'Manga', version: 'SinMH'),
@@ -770,6 +773,7 @@ class FrameworkDetectorService {
     // ── lib-multisrc expansion: near-unique single-match markers ──
     // Manga
     'api.cdnlibs.org', 'rm_h.readerinit', '/api/data/comic?', 'mghcdn.com',
+    'api.asurascans.com',
     'x-mhub-access', 'data-giga_series', 'pagination_readable_products',
     '/ajax/image/list/chap/', '__data.json', 'x-sveltekit-invalidated',
     '/api/trpc/', 'x-mangotheme-stored-slug', '/wp-json/initlise/v1/search',
