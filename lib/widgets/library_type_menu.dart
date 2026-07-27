@@ -12,8 +12,10 @@ class _TypeIcon {
 }
 
 const Map<String, _TypeIcon> _kTypeIcons = {
-  'manga': _TypeIcon(
+  // 'all' keeps the classic Library icon, so the default tab looks unchanged.
+  'all': _TypeIcon(
       Icons.collections_bookmark_outlined, Icons.collections_bookmark),
+  'manga': _TypeIcon(Icons.auto_stories_outlined, Icons.auto_stories),
   'anime': _TypeIcon(Icons.smart_display_outlined, Icons.smart_display),
   'novel': _TypeIcon(Icons.menu_book_outlined, Icons.menu_book),
 };
@@ -21,7 +23,7 @@ const Map<String, _TypeIcon> _kTypeIcons = {
 /// Returns the tab icon for [type] (active or inactive), used both here and by
 /// the bottom nav so the Library tab reflects the current selection.
 IconData libraryTypeIcon(String type, {bool active = false}) {
-  final set = _kTypeIcons[type] ?? _kTypeIcons['manga']!;
+  final set = _kTypeIcons[type] ?? _kTypeIcons['all']!;
   return active ? set.active : set.icon;
 }
 

@@ -36,6 +36,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> with SingleTickerProvid
     {'id': 'gemini', 'name': 'Google Gemini', 'desc': 'Multilingual specialist', 'icon': '💎', 'hint': 'AIza...'},
     {'id': 'deepl', 'name': 'DeepL', 'desc': 'High-quality European languages', 'icon': '🌐', 'hint': 'xxxxxxxx-xxxx-...'},
     {'id': 'huggingface', 'name': 'Hugging Face', 'desc': 'Open-source — Offline capable', 'icon': '🤗', 'badge': 'Offline', 'hint': 'hf_...'},
+    {'id': 'openrouter', 'name': 'OpenRouter', 'desc': 'One key, many models — free tier available', 'icon': '🧭', 'badge': 'Free models', 'hint': 'sk-or-v1-...'},
   ];
 
   static const _languages = {

@@ -134,7 +134,17 @@ class AiTranslationService {
   /// Source language for OCR + ML Kit translation. 'auto' = run all scripts.
   Future<String> _getSourceLanguage() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('ai_source_language') ?? 'ja';
+    // Default to auto-detect. The old 'ja' default silently mis-OCR'd every
+    // non-Japanese page (e.g. Korean read with the Japanese recogniser =
+    // word-salad); 'auto' picks the right script per page.
+    return prefs.getString('ai_source_language') ?? 'auto';
+  }
+
+  String _langForScript(TextRecognitionScript s) {
+    if (s == TextRecognitionScript.korean) return 'ko';
+    if (s == TextRecognitionScript.japanese) return 'ja';
+    if (s == TextRecognitionScript.chinese) return 'zh';
+    return 'en';
   }
 
   /// Shared HTTP POST helper for vision APIs.
@@ -229,11 +239,15 @@ class AiTranslationService {
     final bubbleDetection = prefs.getBool('ai_bubble_detection') ?? true;
     _maxTokens = await _maxTokensForQuality();
     List<_DetectedRegion> mlkitRegions = [];
+    var effectiveSourceLang = sourceLang;
     if ((Platform.isAndroid || Platform.isIOS) &&
         (bubbleDetection || provider == 'mlkit')) {
       try {
-        mlkitRegions = await _detectTextRegions(imageBytes, sourceLang);
-        debugPrint('[AI] ML Kit detected ${mlkitRegions.length} regions (source: $sourceLang)');
+        final (regions, detectedLang) =
+            await _detectTextRegions(imageBytes, sourceLang);
+        mlkitRegions = regions;
+        effectiveSourceLang = detectedLang; // resolves 'auto' to the real script
+        debugPrint('[AI] ML Kit detected ${mlkitRegions.length} regions (source: $effectiveSourceLang)');
       } catch (e) {
         debugPrint('[AI] ML Kit detection failed, using LLM-only mode: $e');
       }
@@ -248,6 +262,9 @@ class AiTranslationService {
       case 'openai':
         regions = await _translateWithOpenAI(imageBytes, apiKey, targetLang, mlkitRegions);
         break;
+      case 'openrouter':
+        regions = await _translateWithOpenRouter(imageBytes, apiKey, targetLang, mlkitRegions);
+        break;
       case 'claude':
         regions = await _translateWithClaude(imageBytes, apiKey, targetLang, mlkitRegions);
         break;
@@ -258,7 +275,7 @@ class AiTranslationService {
         regions = await _translateWithGoogleTranslate(targetLang, mlkitRegions);
         break;
       case 'mlkit':
-        regions = await _translateWithMlKitTranslation(sourceLang, targetLang, mlkitRegions);
+        regions = await _translateWithMlKitTranslation(effectiveSourceLang, targetLang, mlkitRegions);
         break;
       case 'deepl':
         throw Exception('DeepL does not support image translation. Use Claude, OpenAI, Gemini, or Hugging Face.');
@@ -297,53 +314,81 @@ class AiTranslationService {
     }
   }
 
-  /// Runs ML Kit with the configured source language script (or all scripts if 'auto').
-  Future<List<_DetectedRegion>> _detectTextRegions(Uint8List imageBytes, String sourceLang) async {
+  /// Runs ML Kit and returns the detected regions plus the source language it
+  /// settled on. For 'auto' it tries every script and keeps the ONE recogniser
+  /// that read the most text — reading a page with the wrong script produces
+  /// word-salad, and merging every recogniser's output invents text over the
+  /// artwork. The winning script also tells the on-device translator the source
+  /// language.
+  Future<(List<_DetectedRegion>, String)> _detectTextRegions(
+      Uint8List imageBytes, String sourceLang) async {
     final (imgW, imgH) = await _getImageSize(imageBytes);
-    if (imgW == 0 || imgH == 0) return [];
+    if (imgW == 0 || imgH == 0) return (<_DetectedRegion>[], sourceLang);
 
     final tempDir = await getTemporaryDirectory();
     final tempFile = File('${tempDir.path}/mlkit_scan_${DateTime.now().millisecondsSinceEpoch}.jpg');
     await tempFile.writeAsBytes(imageBytes);
     final inputImage = InputImage.fromFilePath(tempFile.path);
 
-    // TachiyomiAT: single recognizer per source language to avoid noise.
-    // Only use all scripts when source is 'auto'.
-    final scripts = sourceLang == 'auto'
-        ? [TextRecognitionScript.latin, TextRecognitionScript.chinese,
-           TextRecognitionScript.japanese, TextRecognitionScript.korean]
+    final auto = sourceLang == 'auto' || sourceLang.isEmpty;
+    final scripts = auto
+        ? const [TextRecognitionScript.latin, TextRecognitionScript.chinese,
+                 TextRecognitionScript.japanese, TextRecognitionScript.korean]
         : [_toOcrScript(sourceLang)];
 
-    final allBlocks = <(Rect, String)>[];
+    var detectedLang = auto ? 'en' : sourceLang;
+    final chosen = <(Rect, String)>[];
     try {
       final results = await Future.wait(scripts.map((script) async {
         final recognizer = TextRecognizer(script: script);
         try {
-          return await recognizer.processImage(inputImage);
+          return (script, await recognizer.processImage(inputImage));
         } finally {
           recognizer.close();
         }
       }));
 
-      for (final recognized in results) {
-        for (final block in recognized.blocks) {
+      // Score each recogniser by how much non-whitespace text it read; the
+      // correct script reads dense, coherent text while wrong scripts read
+      // sparse fragments. Keep only the winner's blocks.
+      (TextRecognitionScript, RecognizedText)? best;
+      var bestScore = -1;
+      for (final r in results) {
+        final score = r.$2.blocks
+            .fold<int>(0, (s, b) => s + b.text.replaceAll(RegExp(r'\s'), '').length);
+        if (score > bestScore) {
+          bestScore = score;
+          best = r;
+        }
+      }
+
+      if (best != null) {
+        if (auto) detectedLang = _langForScript(best.$1);
+        for (final block in best.$2.blocks) {
+          final text = block.text.trim();
+          // A speech bubble has real words; a 1-char blob over artwork is
+          // almost always a false positive.
+          if (text.length < 2) continue;
           final bbox = block.boundingBox;
-          if (block.text.trim().isEmpty) continue;
-          final normalized = Rect.fromLTRB(
-            bbox.left / imgW, bbox.top / imgH,
-            bbox.right / imgW, bbox.bottom / imgH,
-          );
-          allBlocks.add((normalized, block.text.trim()));
+          chosen.add((
+            Rect.fromLTRB(
+              bbox.left / imgW, bbox.top / imgH,
+              bbox.right / imgW, bbox.bottom / imgH,
+            ),
+            text,
+          ));
         }
       }
     } finally {
       try { await tempFile.delete(); } catch (_) {}
     }
 
-    if (allBlocks.isEmpty) return [];
+    if (chosen.isEmpty) return (<_DetectedRegion>[], detectedLang);
 
-    final merged = _mergeNearbyBlocks(allBlocks, 0.03);
-    return merged.where((r) => r.rect.width > 0.02 && r.rect.height > 0.01).toList();
+    final merged = _mergeNearbyBlocks(chosen, 0.03);
+    final regions =
+        merged.where((r) => r.rect.width > 0.02 && r.rect.height > 0.01).toList();
+    return (regions, detectedLang);
   }
 
   Future<(int, int)> _getImageSize(Uint8List bytes) async {
@@ -652,6 +697,42 @@ class AiTranslationService {
       {'Authorization': 'Bearer $apiKey', 'Content-Type': 'application/json'}, body);
     final data = jsonDecode(responseBody);
     return _parseResponse(data['choices']?[0]?['message']?['content'] ?? '', mlkitRegions);
+  }
+
+  // ── OpenRouter (OpenAI-compatible gateway; free models available) ──
+  // Same request shape as OpenAI, different base URL + model. The model is
+  // user-settable ('openrouter_model') because OpenRouter's free ":free" models
+  // rotate; the default is a current free vision model that can OCR+translate
+  // the page image directly. Needs a (free) OpenRouter API key.
+  Future<List<TranslatedRegion>> _translateWithOpenRouter(
+      Uint8List imageBytes, String apiKey, String targetLang,
+      List<_DetectedRegion> mlkitRegions) async {
+    final prefs = await SharedPreferences.getInstance();
+    final model =
+        prefs.getString('openrouter_model') ?? 'google/gemma-4-31b-it:free';
+    final b64Image = base64Encode(imageBytes);
+    final body = jsonEncode({
+      'model': model,
+      'messages': [{'role': 'user', 'content': [
+        {'type': 'text', 'text': _buildPrompt(targetLang, mlkitRegions)},
+        {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,$b64Image'}},
+      ]}],
+      'max_tokens': _maxTokens,
+    });
+    final responseBody = await _postJson(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        'Authorization': 'Bearer $apiKey',
+        'Content-Type': 'application/json',
+        // OpenRouter attribution headers (optional but recommended).
+        'HTTP-Referer': 'https://lillq.me/foxlations',
+        'X-Title': 'Foxlations',
+      },
+      body,
+    );
+    final data = jsonDecode(responseBody);
+    return _parseResponse(
+        data['choices']?[0]?['message']?['content'] ?? '', mlkitRegions);
   }
 
   // ── Claude (Anthropic) ─────────────────────────────────────

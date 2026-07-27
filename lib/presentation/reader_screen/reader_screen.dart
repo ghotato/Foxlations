@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:rhttp/rhttp.dart' as rhttp;
 import 'package:flutter/services.dart';
@@ -110,10 +111,17 @@ class _ReaderBodyState extends State<_ReaderBody>
   // Translation state
   bool _translationEnabled = false; // loaded from settings
   bool _isTranslationActive = false;
-  bool _isTranslating = false;
+  final bool _showTranslated = true; // global translated-vs-original toggle
   String _selectedProviderName = 'Claude';
   String _selectedProviderId = 'gemini';
-  List<TranslationBubble> _translationBubbles = [];
+  // Per-page translation. Bubbles keyed by page index so each image carries its
+  // own overlay (positions correctly and scrolls with the image); the image
+  // size feeds the overlay's letterbox math; _pageTranslating guards re-runs.
+  final Map<int, List<TranslationBubble>> _pageBubbles = {};
+  final Map<int, Size> _pageImgSize = {};
+  final Set<int> _pageTranslating = {};
+  final Set<int> _pageDone = {}; // attempted (success OR fail) — don't re-run
+  bool get _isTranslating => _pageTranslating.isNotEmpty;
   final _translationService = AiTranslationService();
   final _koharuService = KoharuService();
   final Map<int, Uint8List> _koharuImageCache = {};
@@ -184,6 +192,10 @@ class _ReaderBodyState extends State<_ReaderBody>
         !reader.nextChapterError) {
       reader.loadNextChapter();
     }
+
+    // Live translation: as new pages scroll into view, translate them. Cheap
+    // no-op for pages already done or in flight (guarded in _translatePage).
+    if (_isTranslationActive) _translateVisiblePages();
   }
 
   @override
@@ -266,12 +278,40 @@ class _ReaderBodyState extends State<_ReaderBody>
               else
                 _buildReader(context, reader),
 
-              // Translation overlay
-              if (_translationEnabled && _isTranslationActive && (_translationBubbles.isNotEmpty || _isTranslating))
-                ReaderTranslationOverlay(
-                  bubbles: _translationBubbles,
-                  animation: _translationAnimation,
-                  isTranslating: _isTranslating,
+              // Translation bubbles are now drawn per-page (see _buildPageImage
+              // and the paginated itemBuilder) so they ride along with each
+              // image as the user scrolls, instead of a single viewport overlay
+              // that stayed fixed while the page moved underneath it.
+
+              // A subtle top-of-screen indicator while any page is translating.
+              if (_translationEnabled && _isTranslationActive && _isTranslating)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 8,
+                  left: 0,
+                  right: 0,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha(140),
+                          borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const SizedBox(
+                            width: 12, height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(Colors.white)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('Translating…',
+                            style: GoogleFonts.manrope(
+                              fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                        ]),
+                      ),
+                    ),
+                  ),
                 ),
 
               // HUD overlay (animated fade)
@@ -373,6 +413,8 @@ class _ReaderBodyState extends State<_ReaderBody>
             reader.setPage(page);
             setState(() => _sliderPage = page);
             _updateProgress(reader, page);
+            // Translate the page that just came into view.
+            if (_isTranslationActive) _translatePage(page);
             // Auto-preload next chapter when within last 2 pages.
             if (s.autoPreload &&
                 !reader.isLoadingNext &&
@@ -399,6 +441,31 @@ class _ReaderBodyState extends State<_ReaderBody>
             );
             if (filter != null) {
               image = ColorFiltered(colorFilter: filter, child: image);
+            }
+            // Overlay bubbles (non-koharu providers draw boxes; koharu bakes
+            // the translation into translatedBytes above). The overlay fills
+            // the page box and maps normalized bounds into the displayed image
+            // rect, so it stays put over the text as the page zooms/pans.
+            final bubbles = _pageBubbles[i];
+            if (_isTranslationActive &&
+                _selectedProviderId != 'koharu' &&
+                bubbles != null &&
+                bubbles.isNotEmpty) {
+              image = Stack(
+                fit: StackFit.expand,
+                children: [
+                  image,
+                  Positioned.fill(
+                    child: ReaderTranslationOverlay(
+                      bubbles: bubbles,
+                      animation: _translationAnimation,
+                      imageSize: _pageImgSize[i],
+                      fitWidth: fit == BoxFit.fitWidth,
+                      showTranslated: _showTranslated,
+                    ),
+                  ),
+                ],
+              );
             }
             return InteractiveViewer(
               minScale: 1.0,
@@ -556,6 +623,30 @@ class _ReaderBodyState extends State<_ReaderBody>
     }
     if (filter != null) {
       image = ColorFiltered(colorFilter: filter, child: image);
+    }
+    // Bubbles ride on top of THIS image. In webtoon mode the image is
+    // fit-width with intrinsic height, so the item's box equals the displayed
+    // image (no letterbox) — the overlay maps bounds straight onto it. koharu
+    // bakes its translation into the bytes, so it needs no overlay.
+    final bubbles = _pageBubbles[index];
+    if (_isTranslationActive &&
+        _selectedProviderId != 'koharu' &&
+        bubbles != null &&
+        bubbles.isNotEmpty) {
+      return Stack(
+        children: [
+          image,
+          Positioned.fill(
+            child: ReaderTranslationOverlay(
+              bubbles: bubbles,
+              animation: _translationAnimation,
+              imageSize: _pageImgSize[index],
+              fitWidth: true,
+              showTranslated: _showTranslated,
+            ),
+          ),
+        ],
+      );
     }
     return image;
   }
@@ -793,13 +884,17 @@ class _ReaderBodyState extends State<_ReaderBody>
                   setState(() {
                     _isTranslationActive = !_isTranslationActive;
                     if (!_isTranslationActive) {
-                      _translationBubbles = [];
+                      _pageBubbles.clear();
+                      _pageImgSize.clear();
+                      _pageDone.clear();
+                      _pageTranslating.clear();
                       _koharuImageCache.clear();
                       _translationAnimController.reset();
-                    } else {
-                      _translateCurrentPage(reader);
                     }
                   });
+                  // Kick off translation for whatever's on screen; scrolling
+                  // then translates new pages as they come into view.
+                  if (_isTranslationActive) _translateVisiblePages();
                 },
                 child: AnimatedContainer(
                   duration: AppTheme.standard,
@@ -887,14 +982,42 @@ class _ReaderBodyState extends State<_ReaderBody>
     );
   }
 
-  Future<void> _translateCurrentPage(ReaderProvider reader) async {
+  /// Translate every page currently visible on screen. Works for both readers:
+  /// webtoon exposes visible indices via [_itemPositionsListener]; paginated
+  /// has one page, so we fall back to [ReaderProvider.currentPage].
+  void _translateVisiblePages() {
+    if (!_isTranslationActive || !_translationEnabled) return;
+    final reader = context.read<ReaderProvider>();
     if (reader.pages.isEmpty) return;
-    setState(() { _isTranslating = true; _translationBubbles = []; });
+
+    final indices = <int>{};
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isNotEmpty) {
+      for (final p in positions) {
+        if (p.index >= 0 && p.index < reader.pages.length) indices.add(p.index);
+      }
+    }
+    if (indices.isEmpty) {
+      indices.add(reader.currentPage.clamp(0, reader.pages.length - 1));
+    }
+    for (final i in indices) {
+      _translatePage(i);
+    }
+  }
+
+  /// Translate a single page and store the result keyed by [index]. Guarded so
+  /// each page is fetched/OCR'd at most once — repeated scroll callbacks are
+  /// cheap no-ops. On failure the page is still marked done (no retry storm).
+  Future<void> _translatePage(int index) async {
+    final reader = context.read<ReaderProvider>();
+    if (index < 0 || index >= reader.pages.length) return;
+    if (_pageDone.contains(index) || _pageTranslating.contains(index)) return;
+
+    setState(() => _pageTranslating.add(index));
 
     try {
-      final pageIndex = reader.currentPage;
-      final page = reader.pages[pageIndex];
-      Uint8List? imageBytes;
+      final page = reader.pages[index];
+      Uint8List imageBytes;
 
       if (page.url.startsWith('file://')) {
         final path = page.url.replaceFirst('file://', '');
@@ -911,6 +1034,10 @@ class _ReaderBodyState extends State<_ReaderBody>
         }
       }
 
+      // Natural pixel size drives the overlay's letterbox math in paginated
+      // (fit-contain) mode. Best-effort; null just means "assume fills box".
+      final imgSize = await _decodeImageSize(imageBytes);
+
       if (_selectedProviderId == 'koharu') {
         final prefs = await SharedPreferences.getInstance();
         final targetLang = prefs.getString('ai_target_language') ?? 'en';
@@ -921,42 +1048,71 @@ class _ReaderBodyState extends State<_ReaderBody>
         );
         if (mounted) {
           setState(() {
-            _koharuImageCache[pageIndex] = translated;
-            _isTranslating = false;
+            _koharuImageCache[index] = translated;
+            if (imgSize != null) _pageImgSize[index] = imgSize;
+            _pageTranslating.remove(index);
+            _pageDone.add(index);
           });
         }
         return;
       }
 
-      final cacheKey = '${widget.sourceId}_$pageIndex';
+      final cacheKey = '${widget.sourceId}_$index';
       final result = await _translationService.translatePage(imageBytes, cacheKey: cacheKey);
 
       if (mounted) {
         setState(() {
-          _translationBubbles = result.regions.map((r) => TranslationBubble(
+          _pageBubbles[index] = result.regions.map((r) => TranslationBubble(
             id: '${r.x}_${r.y}',
             bounds: Rect.fromLTWH(r.x, r.y, r.w, r.h),
             originalText: r.originalText,
             translatedText: r.translatedText,
             isTranslated: true,
           )).toList();
-          _isTranslating = false;
+          if (imgSize != null) _pageImgSize[index] = imgSize;
+          _pageTranslating.remove(index);
+          _pageDone.add(index);
         });
         _translationAnimController.forward(from: 0);
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isTranslating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Translation failed: $e'), duration: const Duration(seconds: 3)));
+        setState(() {
+          _pageTranslating.remove(index);
+          _pageDone.add(index); // don't hammer a page that keeps failing
+        });
+        // Only surface the error for the page the user is actually looking at,
+        // so background scroll prefetch can't spam snackbars.
+        if (index == reader.currentPage) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Translation failed: $e'), duration: const Duration(seconds: 3)));
+        }
       }
+    }
+  }
+
+  /// Decode just the dimensions of an encoded image. Returns null on failure.
+  Future<Size?> _decodeImageSize(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final size = Size(image.width.toDouble(), image.height.toDouble());
+      image.dispose();
+      codec.dispose();
+      return size;
+    } catch (_) {
+      return null;
     }
   }
 
   Future<void> _loadProviderName() async {
     final name = await ReaderTranslationProviderSheet.getProviderName();
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('ai_translation_enabled') ?? true;
+    // Default OFF to match Settings > AI (which also defaults false). The old
+    // `?? true` here meant the reader showed the Translate button even when the
+    // setting read as disabled — the feature must be opt-in.
+    final enabled = prefs.getBool('ai_translation_enabled') ?? false;
     final id = prefs.getString('ai_provider') ?? 'gemini';
     if (mounted) setState(() { _selectedProviderName = name; _translationEnabled = enabled; _selectedProviderId = id; });
   }

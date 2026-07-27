@@ -239,17 +239,24 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ChangelogItem('Manga, Anime and Light Novels are now separate '
-                'libraries. Long-press the Library tab and a bubble pops up above '
-                'it to switch between them (your choice is remembered). The tab '
-                'icon, the Add button (Add Manga / Add Anime / Add LNs) and the '
-                'Stats page all follow the current library, so each keeps its own '
-                'titles, totals and reading streak.'),
-            _ChangelogItem('RepoForge can now build a working source for sites '
-                'that load their catalog from a JSON API — like Asura Scans, '
-                'which used to come up empty because RepoForge only scraped HTML. '
-                'It recognises the API and generates a source that calls it '
-                'directly.'),
+            _ChangelogItem('Translation now sits over the actual speech bubbles '
+                'and translates as you scroll — turn on AI Translate and new '
+                'pages are translated automatically as they come into view '
+                '(tap a bubble to flip to the original). It rides with the image '
+                'when you zoom or pan.'),
+            _ChangelogItem('More translation fixes: the AI Translate button only '
+                'appears when you\'ve enabled AI translation in Settings > AI (it '
+                'used to show even when off); on-device translation auto-detects '
+                'the page\'s language instead of assuming Japanese, so text comes '
+                'out readable instead of garbled; and there\'s a new OpenRouter '
+                'provider with free models available.'),
+            _ChangelogItem('The Manga / Anime / Light Novel libraries now filter '
+                'properly — picking Anime was still showing manga. Long-press the '
+                'Library tab for the bubble and choose All (everything, the '
+                'default), Manga, Anime or Light Novels; the library, its Add '
+                'button and the Stats page all follow your choice.'),
+            _ChangelogItem('Swipe left or right in the library to slide between '
+                'categories, instead of reaching up to tap the tabs.'),
           ],
               ),
             ),

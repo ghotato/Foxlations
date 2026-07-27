@@ -48,10 +48,13 @@ class _LibraryStatsWidgetState extends State<LibraryStatsWidget>
     final type = context.watch<LibraryTypeProvider>().type;
     final sp = context.read<SourceProvider>();
 
-    List<LibraryManga> ofType(List<LibraryManga> all) => all.where((m) {
-          final t = sp.getInstalledSource(m.sourceId)?.source.itemType ?? 'manga';
-          return t == type;
-        }).toList();
+    List<LibraryManga> ofType(List<LibraryManga> all) {
+      if (type == 'all') return all;
+      return all.where((m) {
+        final t = sp.getInstalledSource(m.sourceId)?.source.itemType ?? 'manga';
+        return t == type;
+      }).toList();
+    }
 
     if (isVault) {
       return Consumer<VaultProvider>(
@@ -201,7 +204,9 @@ class _EmptyStatsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final word = LibraryTypeProvider.label(contentType).toLowerCase();
+    final word = contentType == 'all'
+        ? 'manga'
+        : LibraryTypeProvider.label(contentType).toLowerCase();
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),

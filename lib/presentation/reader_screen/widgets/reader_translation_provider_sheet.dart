@@ -22,7 +22,7 @@ class ReaderTranslationProviderSheet extends StatefulWidget {
     return const {
       'koharu': 'Koharu',
       'claude': 'Claude', 'openai': 'GPT-4o', 'gemini': 'Gemini',
-      'deepl': 'DeepL', 'huggingface': 'HF',
+      'deepl': 'DeepL', 'huggingface': 'HF', 'openrouter': 'OpenRouter',
       'googletranslate': 'Google', 'mlkit': 'On-Device',
     }[id] ?? 'Gemini';
   }
@@ -60,8 +60,9 @@ class _State extends State<ReaderTranslationProviderSheet> {
 
   static const _providers = [
     {'id': 'koharu', 'name': 'Koharu (Local Server)', 'icon': '🖥️', 'badge': 'Full Inpaint'},
-    {'id': 'googletranslate', 'name': 'Google Translate', 'icon': '🌍', 'badge': 'Free'},
     {'id': 'mlkit', 'name': 'On-Device (Offline)', 'icon': '📱', 'badge': 'Free · Offline'},
+    {'id': 'openrouter', 'name': 'OpenRouter', 'icon': '🧭', 'badge': 'Free models'},
+    {'id': 'googletranslate', 'name': 'Google Translate', 'icon': '🌍', 'badge': 'Free'},
     {'id': 'claude', 'name': 'Claude (Anthropic)', 'icon': '🤖', 'badge': 'Recommended'},
     {'id': 'openai', 'name': 'OpenAI GPT-4o', 'icon': '⚡'},
     {'id': 'gemini', 'name': 'Google Gemini', 'icon': '💎', 'badge': 'Cheapest'},

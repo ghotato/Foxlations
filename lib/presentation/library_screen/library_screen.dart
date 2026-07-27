@@ -55,6 +55,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   bool _showBookmarksOnly = false;
   final Set<String> _bookmarkedIds = {};
   String? _selectedCategory; // null = "All"
+  int _swipeDir = 1; // last category-swipe direction, for the slide animation
   bool _isRefreshing = false;
   LibrarySettings _librarySettings = const LibrarySettings();
 
@@ -74,10 +75,11 @@ class _LibraryScreenState extends State<LibraryScreen>
         ? vault.manga
         : context.read<LibraryProvider>().manga;
     // Filter to the content type chosen from the Library tab's long-press menu.
-    // Each entry's type is its source's itemType; an entry whose source is gone
-    // (uninstalled / orphaned) defaults to 'manga' so it doesn't silently
-    // vanish from every view.
+    // 'all' shows everything (the default); otherwise keep only entries whose
+    // source itemType matches. An entry whose source is gone (uninstalled /
+    // orphaned) is treated as 'manga' so it doesn't silently vanish.
     final type = context.read<LibraryTypeProvider>().type;
+    if (type == 'all') return all;
     final sp = context.read<SourceProvider>();
     return all.where((m) {
       final t = sp.getInstalledSource(m.sourceId)?.source.itemType ?? 'manga';
@@ -89,6 +91,43 @@ class _LibraryScreenState extends State<LibraryScreen>
     final vault = context.read<VaultProvider>();
     final cats = vault.vaultActive ? vault.categories : context.read<LibraryProvider>().categories;
     return cats.map((c) => c.name).toList();
+  }
+
+  /// The category tabs actually on screen, in tab order — mirrors what the
+  /// tab strip shows (vault vs normal, and the "Hide empty categories"
+  /// setting). Used by both the tab strip and the swipe-between-categories
+  /// gesture so they can't disagree about what "next"/"previous" means.
+  List<String> _visibleCategories(BuildContext context) {
+    final vault = context.read<VaultProvider>();
+    var cats = vault.vaultActive
+        ? vault.categories.map((c) => c.name).toList()
+        : context.read<LibraryProvider>().categories.map((c) => c.name).toList();
+    if (_librarySettings.hideEmptyCategories) {
+      final used = <String>{
+        for (final m in _activeManga(context)) ...m.categories,
+      };
+      cats = cats.where(used.contains).toList();
+    }
+    return cats;
+  }
+
+  /// Move to the adjacent category on a horizontal swipe. [dir] is +1 for the
+  /// next category (swipe left) and -1 for the previous (swipe right). Clamps
+  /// at the ends (no wrap). A bookmarks-only view counts as sitting just before
+  /// the first category, so swiping left from it lands on the first tab.
+  void _swipeCategory(int dir) {
+    final cats = _visibleCategories(context);
+    if (cats.isEmpty) return;
+    final idx = _showBookmarksOnly
+        ? -1
+        : (_selectedCategory == null ? -1 : cats.indexOf(_selectedCategory!));
+    final next = idx + dir;
+    if (next < 0 || next >= cats.length) return;
+    setState(() {
+      _swipeDir = dir;
+      _selectedCategory = cats[next];
+      _showBookmarksOnly = false;
+    });
   }
 
   Future<void> _checkForUpdates() => _refreshLibrary();
@@ -329,11 +368,6 @@ class _LibraryScreenState extends State<LibraryScreen>
     }
   }
 
-  Future<void> _saveBookmarks() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(kBookmarkedMangaIdsKey, _bookmarkedIds.toList());
-  }
-
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
@@ -381,18 +415,6 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   String _mangaKey(LibraryManga m) => '${m.sourceId}::${m.url}';
-
-  void _toggleBookmark(LibraryManga manga) {
-    final key = _mangaKey(manga);
-    setState(() {
-      if (_bookmarkedIds.contains(key)) {
-        _bookmarkedIds.remove(key);
-      } else {
-        _bookmarkedIds.add(key);
-      }
-    });
-    _saveBookmarks();
-  }
 
   // Multi-select helpers
   void _enterSelectMode(LibraryManga manga) {
@@ -471,36 +493,6 @@ class _LibraryScreenState extends State<LibraryScreen>
     } else {
       context.read<LibraryProvider>().markAllUnread(manga.sourceId, manga.url);
     }
-  }
-
-  void _showContextMenu(LibraryManga manga) {
-    final catNames = _activeCategoryNames(context);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _MangaContextSheet(
-        manga: manga,
-        categories: catNames,
-        onMoveCategory: () {
-          Navigator.pop(context);
-          _showMoveCategorySheet([manga]);
-        },
-        onMarkRead: () {
-          Navigator.pop(context);
-          _doMarkAllRead(manga);
-        },
-        onMarkUnread: () {
-          Navigator.pop(context);
-          _doMarkAllUnread(manga);
-        },
-        onRemove: () {
-          Navigator.pop(context);
-          _doRemove(manga);
-        },
-      ),
-    );
   }
 
   void _showMoveCategorySheet(List<LibraryManga> mangaList) {
@@ -764,6 +756,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     final addLabel = switch (contentType) {
       'anime' => 'Add Anime',
       'novel' => 'Add LNs',
+      'all' => 'Add',
       _ => 'Add Manga',
     };
 
@@ -805,19 +798,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                     // Category tabs with bookmark toggle
                     Consumer2<LibraryProvider, VaultProvider>(
                       builder: (_, library, vault, __) {
-                        final activeManga =
-                            vault.vaultActive ? vault.manga : library.manga;
-                        var cats = vault.vaultActive
-                            ? vault.categories.map((c) => c.name).toList()
-                            : library.categories.map((c) => c.name).toList();
-                        // "Hide empty categories" (Settings > Library): drop any
-                        // tab no library entry is filed under.
-                        if (_librarySettings.hideEmptyCategories) {
-                          final used = <String>{
-                            for (final m in activeManga) ...m.categories,
-                          };
-                          cats = cats.where(used.contains).toList();
-                        }
+                        // Type-filtered (via _visibleCategories) so a category
+                        // counts as "empty" when it has no entries of the current
+                        // library, and so the tabs match the swipe gesture's idea
+                        // of order.
+                        final cats = _visibleCategories(context);
                         // Auto-select first category if none selected, or if
                         // the current selection isn't valid in the active mode
                         // (e.g. after toggling vault, the previous mode's
@@ -865,7 +850,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                     Expanded(
                       child: Consumer2<LibraryProvider, VaultProvider>(
                         builder: (_, library, vault, __) {
-                          final activeManga = vault.vaultActive ? vault.manga : library.manga;
+                          // Route through _activeManga so the grid honours the
+                          // current library type (All / Manga / Anime / LN).
+                          final activeManga = _activeManga(context);
                           final filtered = _applyFilters(activeManga);
 
                           // Pull down anywhere to update the category the user
@@ -875,27 +862,6 @@ class _LibraryScreenState extends State<LibraryScreen>
                                 onRefresh: () => _refreshLibrary(scoped: true),
                                 child: child,
                               );
-
-                          if (filtered.isEmpty) {
-                            return withPullToRefresh(
-                              ListView(
-                                // A plain Center can't be pulled; a scrollable
-                                // list can.
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                children: [
-                                  SizedBox(
-                                    height:
-                                        MediaQuery.of(context).size.height * 0.6,
-                                    child: _EmptyState(
-                                      isSearching: _searchQuery.isNotEmpty,
-                                      searchQuery: _searchQuery,
-                                      isBookmarkFilter: _showBookmarksOnly,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
 
                           void onTap(LibraryManga m) {
                             if (_isSelectMode) {
@@ -918,23 +884,81 @@ class _LibraryScreenState extends State<LibraryScreen>
                             }
                           }
 
-                          return withPullToRefresh(
-                            _isGridView
-                                ? _LibraryGrid(
-                                    mangaList: filtered,
-                                    columnCount: columnCount,
-                                    selectedIds:
-                                        _isSelectMode ? _selectedMangaIds : null,
-                                    onTap: onTap,
-                                    onLongPress: onLong,
-                                  )
-                                : _LibraryList(
-                                    mangaList: filtered,
-                                    selectedIds:
-                                        _isSelectMode ? _selectedMangaIds : null,
-                                    onTap: onTap,
-                                    onLongPress: onLong,
-                                  ),
+                          final Widget inner = filtered.isEmpty
+                              ? ListView(
+                                  // A plain Center can't be pulled; a
+                                  // scrollable list can.
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    SizedBox(
+                                      height: MediaQuery.of(context)
+                                              .size
+                                              .height *
+                                          0.6,
+                                      child: _EmptyState(
+                                        isSearching: _searchQuery.isNotEmpty,
+                                        searchQuery: _searchQuery,
+                                        isBookmarkFilter: _showBookmarksOnly,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : _isGridView
+                                  ? _LibraryGrid(
+                                      mangaList: filtered,
+                                      columnCount: columnCount,
+                                      selectedIds: _isSelectMode
+                                          ? _selectedMangaIds
+                                          : null,
+                                      onTap: onTap,
+                                      onLongPress: onLong,
+                                    )
+                                  : _LibraryList(
+                                      mangaList: filtered,
+                                      selectedIds: _isSelectMode
+                                          ? _selectedMangaIds
+                                          : null,
+                                      onTap: onTap,
+                                      onLongPress: onLong,
+                                    );
+
+                          // Slide the grid/list in from the swipe direction
+                          // when the category changes. Keyed on the current
+                          // filter state so a real category change animates but
+                          // a data refresh (same key) doesn't flicker.
+                          final animated = AnimatedSwitcher(
+                            duration: AppTheme.standard,
+                            switchInCurve: AppTheme.primaryCurve,
+                            transitionBuilder: (child, animation) => ClipRect(
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: Offset(_swipeDir.toDouble(), 0),
+                                  end: Offset.zero,
+                                ).animate(animation),
+                                child: child,
+                              ),
+                            ),
+                            child: KeyedSubtree(
+                              key: ValueKey(
+                                  '${_selectedCategory ?? '_all'}|$_showBookmarksOnly|$_isGridView'),
+                              child: inner,
+                            ),
+                          );
+
+                          // Horizontal fling anywhere in the content area moves
+                          // to the adjacent category (vertical scroll + taps
+                          // still pass through to the grid).
+                          return GestureDetector(
+                            onHorizontalDragEnd: (d) {
+                              final v = d.primaryVelocity ?? 0;
+                              if (v <= -250) {
+                                _swipeCategory(1);
+                              } else if (v >= 250) {
+                                _swipeCategory(-1);
+                              }
+                            },
+                            child: withPullToRefresh(animated),
                           );
                         },
                       ),
@@ -1717,86 +1741,6 @@ class _EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: GoogleFonts.manrope(fontSize: 13, color: cs.outline)),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Manga Context Sheet ─────────────────────────────────────
-class _MangaContextSheet extends StatelessWidget {
-  final LibraryManga manga;
-  final List<String> categories;
-  final VoidCallback onMoveCategory;
-  final VoidCallback onMarkRead;
-  final VoidCallback onMarkUnread;
-  final VoidCallback onRemove;
-
-  const _MangaContextSheet({
-    required this.manga, required this.categories,
-    required this.onMoveCategory, required this.onMarkRead,
-    required this.onMarkUnread, required this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 36, height: 4,
-              decoration: BoxDecoration(color: cs.outline, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          Text(manga.title, style: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w700, color: cs.onSurface),
-              maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-          if (manga.categories.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(manga.categories.join(', '),
-                  style: GoogleFonts.manrope(fontSize: 11, color: cs.outline)),
-            ),
-          const SizedBox(height: 16),
-          if (categories.isNotEmpty)
-            _SheetAction(icon: Icons.drive_file_move_rounded, label: 'Move to Category',
-                color: cs.primary, onTap: onMoveCategory),
-          _SheetAction(icon: Icons.done_all_rounded, label: 'Mark All as Read',
-              color: AppTheme.success, onTap: onMarkRead),
-          _SheetAction(icon: Icons.remove_done_rounded, label: 'Mark All as Unread',
-              color: AppTheme.warning, onTap: onMarkUnread),
-          _SheetAction(icon: Icons.delete_outline_rounded, label: 'Remove from Library',
-              color: AppTheme.error, onTap: onRemove),
-        ],
-      ),
-    );
-  }
-}
-
-class _SheetAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _SheetAction({required this.icon, required this.label, required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-          child: Row(children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(width: 14),
-            Text(label, style: GoogleFonts.manrope(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-          ]),
         ),
       ),
     );

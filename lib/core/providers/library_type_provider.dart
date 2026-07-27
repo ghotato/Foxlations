@@ -10,9 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LibraryTypeProvider extends ChangeNotifier {
   static const _key = 'library_content_type';
 
-  /// Ordered for the menu: manga first (the default and the majority), then
-  /// anime, then light novels.
-  static const List<String> types = ['manga', 'anime', 'novel'];
+  /// Ordered for the menu: All first (the default — shows everything), then
+  /// Manga, Anime, Light Novels which act as filters.
+  static const List<String> types = ['all', 'manga', 'anime', 'novel'];
 
   static String label(String type) {
     switch (type) {
@@ -21,12 +21,14 @@ class LibraryTypeProvider extends ChangeNotifier {
       case 'novel':
         return 'Light Novels';
       case 'manga':
-      default:
         return 'Manga';
+      case 'all':
+      default:
+        return 'All';
     }
   }
 
-  String _type = 'manga';
+  String _type = 'all';
   String get type => _type;
 
   Future<void> initialize() async {
