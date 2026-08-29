@@ -1,0 +1,306 @@
+name: iOS build (JVM) → server
+
+# M5.1: builds the REAL Foxlations app with the embedded OpenJDK Zero VM linked in,
+# so Kotlin/Keiyoushi extensions run in-process (proven end-to-end in the M1 spike).
+# This is a SEPARATE, manual workflow so the normal ios-build.yml stays untouched
+# until the integration is proven. The JVM native code is gated behind -DFOXLATIONS_JVM
+# and the Runner Xcode project is patched at build time (via the xcodeproj gem), so
+# nothing here changes the committed project or the production build.
+#
+# Success signal: install the IPA, Settings → Advanced → "Run JVM Self-Test" → a
+# report ending in "FETCH OK: … - <title>" (or read Documents/jvmboot.txt via Files).
+on:
+  workflow_dispatch:
+    inputs:
+      deliver:
+        description: 'Also scp the IPA home over Tailscale? (true/false)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  actions: read       # gh run download needs this to pull the M0 SDK artifact
+
+env:
+  FLUTTER_VERSION: '3.44.6'
+  LIBFFI_VERSION: '3.4.6'
+  SUWAYOMI_JAR_URL: 'https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.3.2243/Suwayomi-Server-v2.3.2243.jar'
+
+jobs:
+  ios-jvm:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and build number
+        id: meta
+        run: |
+          V=$(grep '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '[:space:]')
+          N="${V##*+}"
+          echo "version=$V"                >> "$GITHUB_OUTPUT"
+          echo "nnn=$(printf '%03d' "$N")" >> "$GITHUB_OUTPUT"
+          echo "Building $V (JVM) as build $N"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      # ── JVM toolchain: JDK 21 (Suwayomi's build JDK) + Kotlin 2.4.0 ────────────
+      - name: Boot JDK 21 (javac + kotlinc)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Kotlin compiler 2.4.0
+        run: |
+          set -euo pipefail
+          curl -fLo "$RUNNER_TEMP/kotlin.zip" \
+            https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-2.4.0.zip
+          unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
+          echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+
+      # ── Pull the M0 SDK (static libjvm + java-home) into ios/jvm/ ──────────────
+      - name: Download latest iOS-JVM SDK (from build-ios-jvm.yml)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RID="$(gh run list --workflow build-ios-jvm.yml --branch main \
+                   --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          [ -n "$RID" ] || { echo "::error::No successful build-ios-jvm run — run M0 first."; exit 1; }
+          gh run download "$RID" --dir sdk
+          SL="$(find sdk -maxdepth 3 -type d -name static-libs | head -1)"
+          [ -n "$SL" ] || { echo "::error::SDK artifact has no static-libs/"; exit 1; }
+          SDK="$(dirname "$SL")"
+          mkdir -p ios/jvm
+          cp -R "$SDK/static-libs" ios/jvm/static-libs
+          cp -R "$SDK/java-home"   ios/jvm/java-home
+          echo "== ios/jvm =="; ls -la ios/jvm
+
+      # The Zero VM links against libffi. Building libffi 3.4.6 from source FAILS on the
+      # macos-latest runner's Xcode 26 assembler ("invalid CFI advance_loc expression" in
+      # aarch64/sysv.S) — but we need this newer Xcode for the Flutter build, so we can't
+      # pin macos-14 like the M0/M1 workflows do. Instead pull the prebuilt iOS device
+      # libffi.a that openjdk-mobile/ios-tools publishes (same libffi our libjvm links).
+      - name: Fetch prebuilt iOS libffi.a
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors --retry-delay 3 \
+            -o "$RUNNER_TEMP/libffi-ios.zip" \
+            "https://github.com/openjdk-mobile/ios-tools/releases/download/libffi-build/libffi-ios.zip"
+          mkdir -p "$RUNNER_TEMP/ffi"
+          unzip -q "$RUNNER_TEMP/libffi-ios.zip" -d "$RUNNER_TEMP/ffi"
+          A="$(find "$RUNNER_TEMP/ffi" -name 'libffi.a' | head -1)"
+          [ -n "$A" ] || { echo "::error::libffi.a not in prebuilt zip"; find "$RUNNER_TEMP/ffi"; exit 1; }
+          cp "$A" ios/jvm/libffi.a
+          echo "prebuilt libffi.a staged ($(wc -c < ios/jvm/libffi.a) bytes)"
+
+      # ── Compile the Java/Kotlin host bits into ios/jvm/{classes,jars} ──────────
+      - name: Build harness classes + probe.jar + runner.jar
+        run: |
+          set -euo pipefail
+          M1=docs/kotlin-extensions/m1
+          mkdir -p ios/jvm/classes ios/jvm/jars
+          # Boot-classpath classes (loaded from <bundle>/classes): harness + DoH resolver.
+          javac --release 21 -d ios/jvm/classes \
+            "$M1/HelloWorld.java" "$M1/ExtHarness.java" "$M1/DohResolver.java"
+          mkdir -p ios/jvm/classes/META-INF/services
+          printf 'foxtensions.net.DohResolver\n' \
+            > ios/jvm/classes/META-INF/services/java.net.spi.InetAddressResolverProvider
+          # Trivial runtime jar (URLClassLoader smoke test).
+          tmp="$(mktemp -d)"; javac --release 21 -d "$tmp" "$M1/TestPlugin.java"
+          ( cd "$tmp" && jar cf "$GITHUB_WORKSPACE/ios/jvm/jars/probe.jar" . )
+          # Release build bundles NO sources — extensions are downloaded on-device at
+          # runtime. (The dev-only MangaDex/Asura/MangaFire test source jars that used to
+          # be bundled here were removed for the public release.)
+          W="$GITHUB_WORKSPACE"
+          # Suwayomi host jar (extensions-lib + AndroidCompat + OkHttp).
+          curl -fL --retry 5 --retry-all-errors --retry-delay 3 -o "$W/ios/jvm/jars/suwayomi-server.jar" "$SUWAYOMI_JAR_URL"
+          # ── Anime framework: animesource.jar ──────────────────────────────────────
+          # Aniyomi's extensions-lib:14 (JitPack) carries the real anime MODELS but ships
+          # AnimeHttpSource / ParsedAnimeHttpSource and the SAnime/SEpisode create()
+          # companions as "Stub!" throwers (the Aniyomi app supplies the impl on-device).
+          # Foxlations' embedded Suwayomi host IS that "app": swap those 6 stub classes for
+          # real mirrors ($M1/animesource, modelled on Suwayomi's manga HttpSource) so the
+          # same Aniyomi Kotlin extensions run beside the Keiyoushi manga/novel ones, using
+          # the SAME NetworkHelper/OkHttp/Injekt. Verified in the desktop harness: AnimeOnsen
+          # browse → detail → episodes → playable video, all under -Dos.name=darwin.
+          curl -fL --retry 5 -o "$W/extlib.aar" "https://jitpack.io/com/github/aniyomiorg/extensions-lib/14/extensions-lib-14.aar"
+          ( cd "$W" && unzip -o extlib.aar classes.jar -d extlib_x >/dev/null )
+          rm -rf "$W/af_build" && mkdir "$W/af_build" && ( cd "$W/af_build" && unzip -qo "$W/extlib_x/classes.jar" )
+          rm -f "$W/af_build/eu/kanade/tachiyomi/animesource/online/AnimeHttpSource.class" \
+                "$W/af_build/eu/kanade/tachiyomi/animesource/online/ParsedAnimeHttpSource.class" \
+                "$W/af_build/eu/kanade/tachiyomi/animesource/model/SAnime.class" "$W/af_build/eu/kanade/tachiyomi/animesource/model/SAnime\$Companion.class" \
+                "$W/af_build/eu/kanade/tachiyomi/animesource/model/SEpisode.class" "$W/af_build/eu/kanade/tachiyomi/animesource/model/SEpisode\$Companion.class"
+          kotlinc -jvm-target 21 -classpath "$W/af_build:$W/ios/jvm/jars/suwayomi-server.jar" -d "$W/af_build" \
+            "$W/$M1"/animesource/model/*.kt "$W/$M1"/animesource/online/*.kt
+          # Package ONLY the animesource subtree. extensions-lib's aar also carries
+          # compile STUBS for network/util/androidx/android.content that duplicate —
+          # and, since this jar precedes suwayomi on the classpath, would SHADOW —
+          # Suwayomi's real classes (asObservableSuccess/awaitSuccess → "Stub!"),
+          # breaking every source. animesource.* is the only thing Suwayomi lacks.
+          jar cf "$W/ios/jvm/jars/animesource.jar" -C "$W/af_build" eu/kanade/tachiyomi/animesource
+          echo "animesource.jar: $(wc -c < "$W/ios/jvm/jars/animesource.jar") bytes"
+          # Compile the Kotlin host runner against Suwayomi + the anime framework
+          # (SourceRunner now routes both manga HttpSource and anime AnimeHttpSource).
+          kotlinc -jvm-target 21 -classpath "$W/ios/jvm/jars/suwayomi-server.jar:$W/ios/jvm/jars/animesource.jar" \
+            -d "$W/ios/jvm/jars/runner.jar" "$M1/SourceRunner.kt" "$M1"/compat/*.kt
+          echo "== ios/jvm/jars =="; ls -lh ios/jvm/jars
+
+      - name: Compute JVM link flags + header paths
+        run: |
+          set -euo pipefail
+          SL="$GITHUB_WORKSPACE/ios/jvm/static-libs"
+          # Same force_load set as the M1 boot link: everything except the launcher,
+          # agents, debug, remote-JMX agent, and unused security/rmi/prefs libs.
+          EXCLUDE='(libjli|libinstrument|libjdwp|libdt_socket|libmanagement_agent|libj2gss|libj2pcsc|libj2pkcs11|libprefs|librmi|libattach|libextnet)\.a$'
+          LD='$(inherited)'
+          while IFS= read -r a; do LD="$LD -force_load $a"; done \
+            < <(find "$SL" -name '*.a' | sort | grep -Ev "$EXCLUDE")
+          LD="$LD $GITHUB_WORKSPACE/ios/jvm/libffi.a"
+          # HotSpot's static build resolves jimage + the JNI_OnLoad natives at runtime by
+          # dlsym string lookup, so the linker sees them as unreferenced. -export_dynamic
+          # puts all globals in the dynamic symbol table (dlsym-able AND treated as "used"
+          # so they survive dead-strip). Paired with DEAD_CODE_STRIPPING=NO below.
+          LD="$LD -Wl,-export_dynamic"
+          LD="$LD -framework UIKit -framework Foundation -framework Security -framework CoreFoundation -framework CoreGraphics -lc++ -lz -liconv"
+          {
+            echo "JVM_OTHER_LDFLAGS=$LD"
+            echo "JVM_HEADER_PATHS=$GITHUB_WORKSPACE/ios/jvm/java-home/include $GITHUB_WORKSPACE/ios/jvm/java-home/include/ios"
+          } >> "$GITHUB_ENV"
+
+      # ── Configure the Xcode project, then PATCH it (files + JVM link settings) ─
+      - name: Flutter config-only (pub get + pod install, no build)
+        run: |
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
+          flutter build ios --release --no-codesign --config-only
+
+      - name: Patch Runner.xcodeproj (add JVM sources + link flags + FOXLATIONS_JVM)
+        run: |
+          set -euo pipefail
+          gem install xcodeproj --no-document
+          ruby - <<'RUBY'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          target  = project.targets.find { |t| t.name == 'Runner' } or abort('no Runner target')
+          group   = project.main_group.find_subpath('Runner', false) or abort('no Runner group')
+
+          %w[JvmBridge.m JvmChannel.swift JvmWxStubs.cpp].each do |fname|
+            present = target.source_build_phase.files_references.any? { |r| r && r.path && File.basename(r.path) == fname }
+            next if present
+            ref = group.new_file(fname)          # -> ios/Runner/<fname>
+            target.add_file_references([ref])
+            puts "added source #{fname}"
+          end
+
+          ld  = ENV['JVM_OTHER_LDFLAGS']
+          hdr = ENV['JVM_HEADER_PATHS'].to_s.split(' ')
+          target.build_configurations.each do |c|
+            bs = c.build_settings
+            bs['OTHER_LDFLAGS'] = ld
+            bs['HEADER_SEARCH_PATHS'] = ([bs['HEADER_SEARCH_PATHS'] || '$(inherited)'].flatten + hdr)
+            bs['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] =
+              "#{(bs['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] || '$(inherited)')} FOXLATIONS_JVM"
+            bs['GCC_PREPROCESSOR_DEFINITIONS'] =
+              "#{(bs['GCC_PREPROCESSOR_DEFINITIONS'] || '$(inherited)')} FOXLATIONS_JVM=1"
+            # HotSpot resolves jimage + the JNI_OnLoad natives via dlsym string lookup, so
+            # dead-code/symbol stripping removes the force_loaded-but-unreferenced symbols
+            # and JNI_CreateJavaVM crashes at pc=0. Keep them.
+            bs['DEAD_CODE_STRIPPING'] = 'NO'
+            bs['STRIP_INSTALLED_PRODUCT'] = 'NO'
+          end
+          project.save
+          puts 'patched Runner.xcodeproj'
+          RUBY
+
+      - name: Build unsigned iOS app (with JVM linked)
+        run: flutter build ios --release --no-codesign
+
+      # ── Stage the JVM runtime into Runner.app, then ad-hoc sign + package ──────
+      - name: Bundle JVM runtime into Runner.app
+        run: |
+          set -euo pipefail
+          APP=build/ios/iphoneos/Runner.app
+          # Statically-linked libjvm forces java.home = <executable_dir>/lib = Runner.app/lib.
+          mkdir -p "$APP/lib"
+          cp -R ios/jvm/java-home/. "$APP/lib/"
+          # Exploded java-home lacks these standalone data files (M0 jdk-image failed);
+          # overlay from the build JDK (format-stable across versions).
+          mkdir -p "$APP/lib/lib/security"
+          for rel in lib/tzdb.dat lib/security/cacerts; do
+            [ -f "$APP/lib/$rel" ] || { [ -f "$JAVA_HOME/$rel" ] && cp "$JAVA_HOME/$rel" "$APP/lib/$rel"; }
+          done
+          cp -R ios/jvm/classes "$APP/classes"
+          cp -R ios/jvm/jars    "$APP/jars"
+          # Drop any dylibs (we link the VM statically); keep the bundle data-only.
+          find "$APP/lib" -name '*.dylib' -delete 2>/dev/null || true
+          echo "staged: $(du -sh "$APP/lib" "$APP/classes" "$APP/jars" | tr '\n' ' ')"
+
+      - name: Package ad-hoc signed IPA
+        id: pkg
+        run: |
+          set -euo pipefail
+          NNN="${{ steps.meta.outputs.nnn }}"; echo "nnn=$NNN" >> "$GITHUB_OUTPUT"
+          cd build/ios/iphoneos
+          APP=Runner.app
+          # Thin fat framework binaries (sideloaders choke on fat wrappers), then sign
+          # inside-out (frameworks first, app last), never --deep.
+          for fw in "$APP"/Frameworks/*.framework; do
+            bin="$fw/$(basename "$fw" .framework)"; [ -f "$bin" ] || continue
+            if [ "$(od -An -N4 -tx1 "$bin" | tr -d ' \n')" = "cafebabe" ]; then
+              lipo -thin arm64 "$bin" -output "$bin.thin"; mv "$bin.thin" "$bin"
+            fi
+          done
+          for fw in "$APP"/Frameworks/*.framework; do codesign --force --sign - --timestamp=none "$fw"; done
+          codesign --force --sign - --timestamp=none "$APP"
+          codesign -dv "$APP"
+          mkdir -p Payload; cp -R "$APP" Payload/
+          IPA="foxlations-jvm-${{ steps.meta.outputs.version }}.ipa"
+          zip -qq -r "$IPA" Payload
+          echo "ipa=$PWD/$IPA" >> "$GITHUB_OUTPUT"
+          ls -lh "$IPA"
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foxlations-jvm-ipa-${{ steps.meta.outputs.version }}
+          path: ${{ steps.pkg.outputs.ipa }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tailscale
+        if: inputs.deliver == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE }}
+
+      - name: Deliver IPA to server
+        if: inputs.deliver == 'true'
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER_NAME: ${{ secrets.SERVER_USER }}
+          BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          else
+            printf '%s' "$SSH_KEY" | tr -d '[:space:]' | base64 -d > ~/.ssh/id_ci
+          fi
+          chmod 600 ~/.ssh/id_ci
+          SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10"
+          DEST="${BUILDS_PATH%/}/build-${{ steps.pkg.outputs.nnn }}-jvm"
+          ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
+          scp $SSH_OPTS "${{ steps.pkg.outputs.ipa }}" "${USER_NAME}@${HOST}:${DEST}/"
+          echo "Delivered to ${USER_NAME}@${HOST}:${DEST}/"

@@ -1,0 +1,81 @@
+# Reusable: builds the platform-INDEPENDENT extension-host jars once and uploads them
+# as the `jvm-jars` artifact. Called by the per-platform JVM build workflows
+# (windows/linux/android) so the jars are built identically everywhere. The iOS
+# workflow builds its own copy inline (it also stages boot classes + libjvm).
+name: build-jvm-jars
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded jars artifact
+        required: false
+        default: jvm-jars
+        type: string
+
+env:
+  SUWAYOMI_JAR_URL: 'https://github.com/Suwayomi/Suwayomi-Server/releases/download/v2.3.2243/Suwayomi-Server-v2.3.2243.jar'
+
+jobs:
+  jars:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up kotlinc
+        run: |
+          curl -fLo "$RUNNER_TEMP/kotlin.zip" \
+            https://github.com/JetBrains/kotlin/releases/download/v2.4.0/kotlin-compiler-2.4.0.zip
+          unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
+          echo "$RUNNER_TEMP/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - name: Build jars (runner + animesource + suwayomi host)
+        run: |
+          set -euo pipefail
+          M1=docs/kotlin-extensions/m1
+          W="$GITHUB_WORKSPACE"
+          mkdir -p out/jars
+
+          # Suwayomi host jar (extensions-lib + AndroidCompat + OkHttp + Injekt).
+          curl -fL --retry 5 --retry-all-errors --retry-delay 3 \
+            -o out/jars/suwayomi-server.jar "$SUWAYOMI_JAR_URL"
+
+          # animesource.jar: Aniyomi extensions-lib:14 carries the real anime MODELS but
+          # ships 6 classes as "Stub!" throwers (the app supplies the impl). Swap those for
+          # our real mirrors ($M1/animesource, modelled on Suwayomi's manga HttpSource).
+          curl -fL --retry 5 -o extlib.aar \
+            https://jitpack.io/com/github/aniyomiorg/extensions-lib/14/extensions-lib-14.aar
+          unzip -o extlib.aar classes.jar -d extlib_x >/dev/null
+          rm -rf af_build && mkdir af_build && ( cd af_build && unzip -qo "$W/extlib_x/classes.jar" )
+          rm -f af_build/eu/kanade/tachiyomi/animesource/online/AnimeHttpSource.class \
+                af_build/eu/kanade/tachiyomi/animesource/online/ParsedAnimeHttpSource.class \
+                af_build/eu/kanade/tachiyomi/animesource/model/SAnime.class \
+                'af_build/eu/kanade/tachiyomi/animesource/model/SAnime$Companion.class' \
+                af_build/eu/kanade/tachiyomi/animesource/model/SEpisode.class \
+                'af_build/eu/kanade/tachiyomi/animesource/model/SEpisode$Companion.class'
+          kotlinc -jvm-target 21 -classpath "af_build:out/jars/suwayomi-server.jar" \
+            -d af_build "$M1"/animesource/model/*.kt "$M1"/animesource/online/*.kt
+          # Package ONLY the animesource subtree — the aar's other stub classes would
+          # shadow Suwayomi's real ones on the classpath and break every source.
+          jar cf out/jars/animesource.jar -C af_build eu/kanade/tachiyomi/animesource
+
+          # runner.jar: the SourceRunner host (routes manga HttpSource + anime AnimeHttpSource).
+          kotlinc -jvm-target 21 \
+            -classpath "out/jars/suwayomi-server.jar:out/jars/animesource.jar" \
+            -d out/jars/runner.jar "$M1/SourceRunner.kt" "$M1"/compat/*.kt
+
+          echo "== jars ==" && ls -lh out/jars
+
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: out/jars/*.jar
+          if-no-files-found: error
+          retention-days: 5

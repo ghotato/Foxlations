@@ -1,0 +1,70 @@
+name: Windows build (JVM)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  # Build the platform-independent extension-host jars once (on Linux).
+  jars:
+    uses: ./.github/workflows/_build-jars.yml
+
+  windows:
+    needs: jars
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (for jlink)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Stage the embedded JRE (jlink) + jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Full runtime image so every module Suwayomi touches (java.sql/naming/desktop,
+          # jdk.crypto.ec, …) is present. Windows runtime because jlink runs on this JDK.
+          "$JAVA_HOME/bin/jlink" \
+            --module-path "$JAVA_HOME/jmods" --add-modules ALL-MODULE-PATH \
+            --strip-debug --no-header-files --no-man-pages --output windows/jre
+          # JNI headers for compiling native/jvm_bridge.cpp.
+          cp -r "$JAVA_HOME/include" windows/jre/include
+          mkdir -p windows/jars
+
+      - name: Download jars
+        uses: actions/download-artifact@v4
+        with:
+          name: jvm-jars
+          path: windows/jars
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build Windows app
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release
+          echo "== bundle ==" && ls -la build/windows/x64/runner/Release
+
+      - name: Zip bundle
+        shell: bash
+        run: |
+          cd build/windows/x64/runner/Release
+          7z a "$GITHUB_WORKSPACE/Foxlations-windows-x64.zip" . >/dev/null
+          echo "zip: $(ls -lh "$GITHUB_WORKSPACE/Foxlations-windows-x64.zip")"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Foxlations-windows-x64
+          path: Foxlations-windows-x64.zip
+          if-no-files-found: error

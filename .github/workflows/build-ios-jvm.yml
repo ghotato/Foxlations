@@ -1,0 +1,287 @@
+name: iOS JVM (M0) → libjvm.a
+
+# Milestone 0 of the on-device Kotlin-extensions epic
+# (see docs/kotlin-extensions/m0-openjdk-ios-build.md).
+#
+# Cross-builds the OFFICIAL openjdk/mobile project's iOS JVM — a static
+# `libjvm.a` using the Zero interpreter (no JIT, no W+X memory, so it's legal on
+# iOS). Pure CI: no device needed. Success = libjvm.a drops out and uploads as a
+# run artifact. This is a research spike, so the first runs are EXPECTED to fail
+# at the "support libs" step until libffi/cups sourcing is nailed down — that's
+# open-question #1 in the M0 doc, and this workflow is how we shake it out.
+#
+# Manual only — this is not tied to app releases.
+on:
+  workflow_dispatch:
+    inputs:
+      cache_rev:
+        description: 'Cache-buster. Bump to force a full rebuild (e.g. v1 -> v2).'
+        required: false
+        default: 'v1'
+      deliver:
+        description: 'Also scp the artifact home over Tailscale? (true/false)'
+        required: false
+        default: 'false'
+
+env:
+  # openjdk/mobile now tracks JDK 28-dev, so configure demands a boot JDK of
+  # 26/27/28 (the docs' "JDK 24" is stale). 26 is the highest GA build available;
+  # bump this if the repo advances and configure rejects it again.
+  BOOT_JDK_VERSION: '26'
+  # cups is needed only for its HEADERS (--with-cups-include). 2.3.6 per the docs;
+  # any recent tag's headers compile the same, so we fall back to the default
+  # branch if the tag is gone.
+  CUPS_VERSION: '2.3.6'
+  # libffi is cross-built for iOS. Use a RELEASE (ships a pre-generated
+  # ./configure, so no autogen/automake/libtool dance needed).
+  LIBFFI_VERSION: '3.4.6'
+
+jobs:
+  build-ios-libjvm:
+    # arm64 runner so the boot JDK arch matches the build host.
+    runs-on: macos-14
+    steps:
+      - name: Checkout Foxlations (for docs + this workflow)
+        uses: actions/checkout@v4
+
+      # If a previous run already produced libjvm.a for this cache_rev, skip the
+      # long build entirely and go straight to upload/deliver.
+      - name: Cache built iOS JVM artifact
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: artifacts/ios-jvm
+          # Fold the workflow's own hash into the key so ANY edit to this file
+          # (e.g. changing what gets staged) auto-invalidates the cache — no more
+          # stale cache hits skipping a build you meant to re-run. cache_rev is
+          # the manual override for forcing a rebuild without editing the file.
+          key: ios-jvm-zero-${{ inputs.cache_rev }}-${{ hashFiles('.github/workflows/build-ios-jvm.yml') }}
+
+      - name: Boot JDK ${{ env.BOOT_JDK_VERSION }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.BOOT_JDK_VERSION }}
+
+      - name: Tooling (autoconf/automake/libtool)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: brew install autoconf automake libtool
+
+      - name: Checkout openjdk/mobile
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: openjdk/mobile
+          path: mobile
+          # PINNED (not HEAD): a later openjdk/mobile commit regressed the iOS cross
+          # build — the interim build-JDK's shared libjvm link started passing the
+          # GNU `-soname` flag, which Apple's ld rejects ("unknown options: -soname").
+          # This SHA (2026-07-30) is from the era that built cleanly (our last good
+          # libjvm.a is dated 2026-08-07). Bump forward only once upstream fixes it.
+          ref: c1ed06aaef34c8dccf71e236d1ffa20918a77cfb
+          # A SHA fetch still works shallow with checkout@v4.
+
+      # ── The known unknown: iOS support libs (libffi + cups headers) ──────────
+      # configure needs:
+      #   --with-libffi-include / --with-libffi-lib   (compiled libffi for iOS)
+      #   --with-cups-include                          (cups headers only)
+      # cups headers are trivially sourceable from the cups release tarball.
+      # libffi must be CROSS-BUILT for aarch64-apple-ios. The block below is a
+      # best-effort attempt written from the standard autotools iOS recipe — it is
+      # UNVERIFIED and is the single most likely first failure point. When it
+      # breaks, fix it HERE (or drop in the project's prebuilt "mobile support
+      # zip" if one is published) and re-run.
+      - name: Prepare iOS support libs (libffi + cups headers) [UNVERIFIED]
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: support
+        run: |
+          set -euo pipefail
+          SUP="$RUNNER_TEMP/support"
+          mkdir -p "$SUP"
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CLANG="$(xcrun --sdk iphoneos --find clang)"
+          echo "SDK=$SDK"
+          echo "CLANG=$CLANG"
+
+          echo "::group::Any support-lib guidance shipped in openjdk/mobile"
+          grep -RIn --include='*.md' -e 'libffi' -e 'support zip' -e 'cups' \
+            mobile/doc mobile/README* 2>/dev/null | head -40 || true
+          ls -la mobile/make/devkit 2>/dev/null || true
+          echo "::endgroup::"
+
+          echo "== [1/3] cups $CUPS_VERSION headers (git, headers only) =="
+          # Headers only — no build. Fall back to the default branch if the exact
+          # tag is gone (2.3.x/2.4.x headers all compile the JDK the same).
+          git clone --depth 1 --branch "v${CUPS_VERSION}" \
+              https://github.com/OpenPrinting/cups "$SUP/cups-src" \
+            || git clone --depth 1 https://github.com/OpenPrinting/cups "$SUP/cups-src"
+          CUPS_INC="$SUP/cups-src"
+          test -f "$CUPS_INC/cups/cups.h" \
+            || { echo "::error::cups headers missing at $CUPS_INC/cups/cups.h"; exit 1; }
+          echo "cups OK: $CUPS_INC/cups/cups.h"
+
+          echo "== [2/3] libffi $LIBFFI_VERSION (release tarball → cross-build) =="
+          curl -fSL --retry 6 --retry-all-errors --retry-delay 3 \
+            "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz" \
+            -o "$SUP/libffi.tgz"
+          tar -xzf "$SUP/libffi.tgz" -C "$SUP"
+          pushd "$SUP/libffi-${LIBFFI_VERSION}"
+          # --host puts autoconf in cross mode (skips run-tests); pre-generated
+          # ./configure ships in the release, so no autogen needed.
+          ./configure \
+            --host=aarch64-apple-darwin \
+            --prefix="$SUP/libffi" \
+            --disable-shared --enable-static \
+            CC="$CLANG" \
+            CFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=15.0"
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+          popd
+          # libffi historically drops ffi.h under lib/libffi-<ver>/include, newer
+          # versions under include/ — find it either way.
+          FFI_INC="$SUP/libffi/include"
+          [ -f "$FFI_INC/ffi.h" ] || FFI_INC="$(dirname "$(find "$SUP/libffi" -name ffi.h | head -1)")"
+          test -f "$SUP/libffi/lib/libffi.a" \
+            || { echo "::error::libffi.a not built under $SUP/libffi/lib"; exit 1; }
+          test -f "$FFI_INC/ffi.h" \
+            || { echo "::error::ffi.h not found anywhere under $SUP/libffi"; exit 1; }
+          echo "libffi OK: $SUP/libffi/lib/libffi.a  (headers: $FFI_INC)"
+
+          echo "== [3/3] export paths for configure =="
+          {
+            echo "support_dir=$SUP"
+            echo "cups_include=$CUPS_INC"
+            echo "libffi_include=$FFI_INC"
+            echo "libffi_lib=$SUP/libffi/lib"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure (Zero, iOS device)
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          sh configure \
+            --disable-warnings-as-errors \
+            --openjdk-target=aarch64-macos-ios \
+            --with-libffi-include='${{ steps.support.outputs.libffi_include }}' \
+            --with-libffi-lib='${{ steps.support.outputs.libffi_lib }}' \
+            --with-cups-include='${{ steps.support.outputs.cups_include }}' \
+            --with-sysroot="$(xcrun --sdk iphoneos --show-sdk-path)"
+
+      - name: Build static-libs-image
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: mobile
+        run: make CONF=ios-aarch64-zero-release static-libs-image
+
+      # The native static libs alone can't run Java — we also need the class
+      # library (the `modules` jimage). Best-effort so a cross jdk-image failure
+      # doesn't lose the static libs we already built; staging warns if the
+      # module image is absent and dumps the tree so we can locate it.
+      - name: Build class-library image (jdk-image) [best-effort]
+        if: steps.cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        working-directory: mobile
+        run: |
+          if ! make CONF=ios-aarch64-zero-release jdk-image; then
+            echo "::warning::jdk-image failed for the cross target — staging will fall back to the exploded image. Failure logs below (for a proper jimage later):"
+            for f in build/ios-aarch64-zero-release/make-support/failure-logs/*.log; do
+              [ -f "$f" ] || continue
+              echo "===== $f ====="; tail -60 "$f"
+            done
+            exit 1
+          fi
+
+      - name: Stage iOS JVM SDK (static libs + class library) + inventory
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          BUILD=mobile/build/ios-aarch64-zero-release
+          OUT=artifacts/ios-jvm
+          INV="$OUT/INVENTORY.txt"
+          mkdir -p "$OUT/static-libs"
+          : > "$INV"
+
+          # 1) All native static libs (M1 links these: libjvm + libjava/libnio/…).
+          SL="$BUILD/images/static-libs/lib"
+          [ -f "$SL/zero/libjvm.a" ] || { echo "::error::libjvm.a missing under $SL/zero"; exit 1; }
+          cp -R "$SL/." "$OUT/static-libs/"
+          echo "== static libs ==" | tee -a "$INV"
+          find "$OUT/static-libs" -name '*.a' | sed "s#$OUT/##" | sort | tee -a "$INV"
+
+          # 2) Class library as a runnable java.home. Prefer a PACKED `modules`
+          #    jimage FILE (from jdk-image); if the cross target didn't produce
+          #    one, fall back to the EXPLODED image ($BUILD/jdk), which HotSpot
+          #    can boot from directly (a java.home whose lib/ has no `modules`
+          #    file but a sibling modules/ dir of exploded classes). Bigger, but
+          #    it unblocks M1 — we optimize to a jimage for app size later.
+          echo "== class library ==" | tee -a "$INV"
+          JIMAGE="$(find "$BUILD/images" -type f -name modules 2>/dev/null | head -1 || true)"
+          if [ -n "$JIMAGE" ]; then
+            IMG_JDK="$(cd "$(dirname "$JIMAGE")/.." && pwd)"   # images/jdk root
+            echo "MODE: jimage — ${JIMAGE#mobile/}" | tee -a "$INV"
+            mkdir -p "$OUT/java-home"
+            cp -R "$IMG_JDK/." "$OUT/java-home/"
+          elif [ -d "$BUILD/jdk/modules" ]; then
+            echo "MODE: exploded image — no jimage (jdk-image didn't build); staging $BUILD/jdk as java.home" | tee -a "$INV"
+            mkdir -p "$OUT/java-home"
+            cp -R "$BUILD/jdk/." "$OUT/java-home/"
+          else
+            echo "::error::No class library found (neither a jimage nor an exploded jdk/modules). Tree:" | tee -a "$INV"
+            find "$BUILD" -maxdepth 3 -type d | sed "s#mobile/##" | sort | tee -a "$INV"
+            exit 1
+          fi
+          # We statically link the native libs, so drop any dylibs that slipped in.
+          find "$OUT/java-home" -name '*.dylib' -delete 2>/dev/null || true
+          echo "-- java-home top level --" | tee -a "$INV"
+          ls -1 "$OUT/java-home" 2>/dev/null | sed 's/^/  /' | tee -a "$INV"
+
+          echo "== sizes ==" | tee -a "$INV"
+          du -sh "$OUT/static-libs" 2>/dev/null | tee -a "$INV" || true
+          du -sh "$OUT/java-home" 2>/dev/null | tee -a "$INV" || true
+          du -sh "$OUT" | tee -a "$INV"
+
+      # Safety net: keep whatever we built as a downloadable run artifact BEFORE
+      # attempting delivery, mirroring the iOS IPA workflow.
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-jvm-${{ inputs.cache_rev }}
+          path: artifacts/ios-jvm
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Optional home delivery over Tailscale, same secret pattern as ios-build.yml.
+      - name: Tailscale
+        if: inputs.deliver == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE }}
+
+      - name: Deliver artifact to server
+        if: inputs.deliver == 'true'
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER_NAME: ${{ secrets.SERVER_USER }}
+          BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          else
+            printf '%s' "$SSH_KEY" | tr -d '[:space:]' | base64 -d > ~/.ssh/id_ci
+          fi
+          chmod 600 ~/.ssh/id_ci
+          if ! ssh-keygen -y -f ~/.ssh/id_ci > /dev/null 2>&1; then
+            echo "::error::SERVER_SSH_KEY is not a valid OpenSSH private key."
+            exit 1
+          fi
+          SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10"
+          # Sibling of the release builds dir — this is tooling, not a build-NNN.
+          DEST="${BUILDS_PATH%/}/ios-jvm"
+          ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
+          scp $SSH_OPTS -r artifacts/ios-jvm/* "${USER_NAME}@${HOST}:${DEST}/"
+          echo "Delivered iOS JVM artifacts to ${USER_NAME}@${HOST}:${DEST}/"

@@ -1,0 +1,115 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Signing secrets — never commit
+android/key.properties
+*.jks
+*.keystore
+
+# ── Build-only repo: keep just what's needed to build Android + iOS ──
+# Numbered local build outputs (APK/IPA live on the server, not in git).
+/builds/
+
+# Other platform projects — we build Android, iOS and Windows. These stay on
+# disk (regenerate with `flutter create` if you ever target them) but off GitHub.
+#
+# windows/ is deliberately NOT in this list: the CI runner builds it, and
+# `flutter build windows` aborts with "No Windows desktop project configured"
+# when the scaffold is missing from the checkout. Only the ~18 source files are
+# tracked — windows/.gitignore keeps flutter/ephemeral/ (the SDK DLLs) out.
+/macos/
+/linux/
+/web/
+
+# Dev-only Dart tools + generated dev config (not needed to build the app).
+/tool/
+/devtools_options.yaml
+
+# ── Local release automation ──
+# Run from the repo root on my machine only. These drive MY server (ZFS paths,
+# the build container's name, the Caddy web root), so they're useless to anyone
+# who clones this. CI never calls them — .github/workflows/ios-build.yml invokes
+# flutter directly — so keeping the folder out of the repo breaks nothing.
+# (.github/workflows/ MUST stay: Actions only runs workflows from the repo.)
+/scripts/
+
+# ── Unit tests ──
+# Run locally (`flutter test`), never in CI — no workflow invokes them, and
+# nothing in lib/ or pubspec.yaml references them, so the repo builds without.
+/test/
+
+# ── Secrets & credentials ──
+# Belt-and-braces: none of these are committed today, and the point is that a
+# stray one can never be added by accident. Signing keys are covered above.
+.env
+.env.*
+*.pem
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+
+# ── Editor / agent local config ──
+.vscode/
+.claude/
+
+# ── Stray app artifacts outside /builds/ ──
+*.apk
+*.aab
+*.ipa
+
+# Native lib built locally so `flutter test` can drive rhttp (source harness).
+# Rebuilt from the rhttp crate on demand; never committed.
+*.so
+
+# JVM static libs from the on-device JVM build (e.g. libjvm.a, static-libs/*.a).
+# Build artifacts — large binaries, rebuilt on demand; never committed.
+*.a
+/INVENTORY.txt
+
+# ── Local planning docs — deliberately not published ──
+/ROADMAP.md
+/ClassicSource.json

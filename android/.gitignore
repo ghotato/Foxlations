@@ -1,0 +1,20 @@
+gradle-wrapper.jar
+/.gradle
+/captures/
+/gradlew
+/gradlew.bat
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks
+
+# Embedded JVM assets (staged by CI before build; not committed)
+app/src/main/assets/jvm/
+
+# Vendored eu.kanade.tachiyomi.* extension runtime (ApkBridge, populated by CI/script)
+app/src/main/ext-runtime/

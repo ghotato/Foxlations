@@ -1,0 +1,201 @@
+import 'package:flutter/foundation.dart' hide Category;
+import '../models/manga_model.dart';
+import '../models/chapter_model.dart';
+import '../models/category_model.dart';
+import '../services/library_service.dart';
+
+class LibraryProvider extends ChangeNotifier {
+  final LibraryService _libraryService = LibraryService();
+  List<LibraryManga> _manga = [];
+  List<Category> _categories = [];
+  bool _initialized = false;
+
+  List<LibraryManga> get manga => _manga;
+  List<Category> get categories => _categories;
+  bool get initialized => _initialized;
+
+  Future<void> initialize() async {
+    await _libraryService.init();
+    _manga = _libraryService.getAllManga();
+    _categories = _libraryService.getCategories();
+    _initialized = true;
+    notifyListeners();
+  }
+
+  /// Re-read the library from disk (e.g. after a backup restore wrote directly
+  /// to the Hive boxes) without re-initializing the service.
+  Future<void> reload() async {
+    _manga = _libraryService.getAllManga();
+    _categories = _libraryService.getCategories();
+    notifyListeners();
+  }
+
+  // ── Category management ─────────────────────────────────────
+  Future<void> addCategory(String name) async {
+    await _libraryService.addCategory(name);
+    _categories = _libraryService.getCategories();
+    notifyListeners();
+  }
+
+  Future<void> removeCategory(String name) async {
+    await _libraryService.removeCategory(name);
+    _categories = _libraryService.getCategories();
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  Future<void> reorderCategories(List<String> orderedNames) async {
+    await _libraryService.reorderCategories(orderedNames);
+    _categories = _libraryService.getCategories();
+    notifyListeners();
+  }
+
+  Future<void> renameCategory(String oldName, String newName) async {
+    await _libraryService.renameCategory(oldName, newName);
+    _categories = _libraryService.getCategories();
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  Future<void> setMangaCategories(String sourceId, String url, List<String> cats) async {
+    final manga = _libraryService.getManga(sourceId, url);
+    if (manga != null) {
+      manga.categories = cats;
+      await _libraryService.updateManga(manga);
+      _manga = _libraryService.getAllManga();
+      notifyListeners();
+    }
+  }
+
+  bool isInLibrary(String sourceId, String url) {
+    return _libraryService.isInLibrary(sourceId, url);
+  }
+
+  Future<void> addToLibrary(LibraryManga manga) async {
+    await _libraryService.addManga(manga);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  Future<void> removeFromLibrary(String sourceId, String url) async {
+    await _libraryService.removeManga(sourceId, url);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  /// Full chapter objects (with read state) for an entry, for moving to vault.
+  List<LibraryChapter> fullChapters(String sourceId, String url) =>
+      _libraryService.getFullChapters(sourceId, url);
+
+  /// Adds an entry and its chapters, preserving read progress (for vault moves).
+  Future<void> addEntryWithChapters(
+      LibraryManga manga, List<LibraryChapter> chapters) async {
+    await _libraryService.addEntryWithChapters(manga, chapters);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  Future<void> updateReadingProgress(
+    String sourceId,
+    String mangaUrl,
+    String chapterUrl,
+    int page,
+  ) async {
+    await _libraryService.updateReadingProgress(
+        sourceId, mangaUrl, chapterUrl, page);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  /// Persist anime playback position (seconds). Called on a ~5s throttle during
+  /// playback (notify off, to avoid rebuilding the library mid-watch) and once on exit
+  /// (notify on, so the detail screen's Resume button updates).
+  Future<void> updateEpisodeProgress(
+    String sourceId,
+    String mangaUrl,
+    String episodeUrl,
+    int positionSeconds, {
+    bool notify = false,
+  }) async {
+    await _libraryService.updateEpisodeProgress(
+        sourceId, mangaUrl, episodeUrl, positionSeconds);
+    if (notify) {
+      _manga = _libraryService.getAllManga();
+      notifyListeners();
+    }
+  }
+
+  /// Saved playback position (seconds) for an episode, or 0 if none.
+  int episodeLastPosition(String sourceId, String episodeUrl) =>
+      _libraryService.episodeLastPosition(sourceId, episodeUrl);
+
+  Future<void> markChapterRead(
+      String sourceId, String mangaUrl, String chapterUrl) async {
+    await _libraryService.markChapterRead(sourceId, mangaUrl, chapterUrl);
+    notifyListeners();
+  }
+
+  bool isChapterRead(String sourceId, String chapterUrl) {
+    return _libraryService.isChapterRead(sourceId, chapterUrl);
+  }
+
+  /// Unread-chapter count for [m]'s library badge, from actual cached read-state
+  /// (see [LibraryService.unreadCount]) so it can't stick at "99+".
+  int unreadForManga(LibraryManga m) =>
+      _libraryService.unreadCount(m.sourceId, m.url);
+
+  Future<void> markChapterUnread(
+      String sourceId, String mangaUrl, String chapterUrl) async {
+    await _libraryService.markChapterUnread(sourceId, mangaUrl, chapterUrl);
+    notifyListeners();
+  }
+
+  // ── Chapter cache ─────────────────────────────────────────
+  Future<void> cacheChapters(String sourceId, String mangaUrl, List<Map<String, dynamic>> chapters) async {
+    final libChapters = chapters.map((c) => LibraryChapter(
+      sourceId: sourceId,
+      mangaUrl: mangaUrl,
+      chapterUrl: c['url'] as String? ?? '',
+      title: c['name'] as String? ?? '',
+      dateUpload: c['dateUpload'] as String?,
+    )).toList();
+    await _libraryService.cacheChapters(sourceId, mangaUrl, libChapters);
+
+    // Stamp when this entry's chapter list was last pulled, so the library can
+    // sort by "Chapter fetch date". Nothing recorded this before, which is why
+    // that sort couldn't be offered.
+    final entry = _libraryService.getManga(sourceId, mangaUrl);
+    if (entry != null) {
+      entry.lastChapterFetchAt = DateTime.now();
+      await entry.save();
+    }
+
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  List<LibraryChapter> getCachedChapters(String sourceId, String mangaUrl) {
+    return _libraryService.getCachedChapters(sourceId, mangaUrl);
+  }
+
+  Future<void> markAllRead(String sourceId, String url) async {
+    await _libraryService.markAllChaptersRead(sourceId, url);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  Future<void> markAllUnread(String sourceId, String url) async {
+    await _libraryService.markAllChaptersUnread(sourceId, url);
+    _manga = _libraryService.getAllManga();
+    notifyListeners();
+  }
+
+  // ── Reading stats ──────────────────────────────────────────────────
+  Map<DateTime, int> getReadActivityByDay({int days = 365, Set<String>? sourceIds}) =>
+      _libraryService.getReadActivityByDay(days: days, sourceIds: sourceIds);
+
+  int getCurrentReadingStreak({Set<String>? sourceIds}) =>
+      _libraryService.getCurrentReadingStreak(sourceIds: sourceIds);
+  int getLongestReadingStreak({Set<String>? sourceIds}) =>
+      _libraryService.getLongestReadingStreak(sourceIds: sourceIds);
+}
