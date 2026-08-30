@@ -1,32 +1,28 @@
-The Manga / Anime / Light Novel libraries now filter properly, translation is
-better on-device, and there's a new free OpenRouter option.
+Foxlations v1.0.0 — the first official release
 
-Libraries
-- The separate Manga / Anime / Light Novel libraries now actually filter —
-  before, picking Anime still showed manga. Long-press the Library tab and a
-  small bubble pops up above it: All (everything — the default), Manga, Anime or
-  Light Novels. Picking one shows just that kind, and your choice sticks after
-  you leave or close the app. The Library tab icon, the "Add" button (Add Manga
-  / Add Anime / Add LNs) and the Stats page all follow the current library.
-- Swipe left or right anywhere in the library grid to slide to the next or
-  previous category — no need to reach up and tap the category tabs.
-- The number badge on each cover now counts UNREAD chapters and ticks down as
-  you read, instead of showing a fixed total that never changed.
+Foxlations now runs on-device extensions for manga, manhwa, manhua, light novels,
+and anime — no computer or server needed. Add a source, and read or watch right on
+your device.
 
-Translation
-- Translated text now sits ON the page, over the speech bubbles it belongs to,
-  instead of floating in a fixed layer. It rides along with each image, so it
-  stays put when you zoom or pan.
-- Translate-as-you-scroll: turn on AI Translate and keep reading — new pages are
-  translated automatically as they scroll into view (great for long webtoons),
-  not just the one page you started on. Tap any bubble to flip between the
-  translation and the original text.
-- The AI Translate button now only shows when you've turned AI translation on in
-  Settings > AI. Before, it could appear (and run) even with the feature off.
-- Better on-device translation: it now auto-detects the page's language (Korean,
-  Japanese, Chinese or Latin) instead of assuming Japanese, so text is read and
-  translated correctly rather than coming out as garbled fragments — and it
-  ignores stray "text" picked up over the artwork.
-- New OpenRouter provider, with free models available (needs a free OpenRouter
-  API key). It joins the on-device (offline) and Google Translate free options.
-  A local Koharu server still gives the highest-quality results.
+Highlights
+- Anime streaming — add an anime source and watch episodes in the built-in player;
+  the app handles the extension on-device and finds the video for you.
+- On-device extensions — a wide range of existing source formats work directly,
+  no external tooling required.
+- Continue where you left off — reopen an episode to pick up right where you
+  stopped watching, and light novels return you to your exact scroll position.
+- Gets past Cloudflare — protected sources clear the check with a quick in-app step,
+  and it's remembered.
+- Volume-button reading — tap to turn a page or scroll a screen, hold to scroll
+  fluidly at a speed you set (Android; experimental on iOS).
+- iOS, Android, and Windows.
+
+Also in this release
+- Player: fixed seek-bar clipping in landscape, resume that actually sticks,
+  scrollable subtitle/audio/quality menus, and separate-audio-track playback.
+- Reading: light-novel chapters and ID-keyed pages load; installed sources survive
+  app re-signs; large source repos show correct language and content rating.
+- Stability: no more crash when reopening from the background (iOS); every error
+  surfaces in More > Debug logs; nothing hides under the Android navigation bar.
+
+Full change list is in the app: More > About > What's New.

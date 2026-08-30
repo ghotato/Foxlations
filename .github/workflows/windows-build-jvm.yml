@@ -2,6 +2,11 @@ name: Windows build (JVM)
 
 on:
   workflow_dispatch:
+    inputs:
+      deliver:
+        description: 'Also scp the zip home over Tailscale? (true/false)'
+        required: false
+        default: 'false'
   push:
     tags: ['v*']
 
@@ -15,6 +20,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Same build-number derivation as the iOS workflow, so the zip lands in the
+      # SAME builds/build-NNN/ folder as the APK + IPA (pubspec's +N is the key).
+      - name: Resolve version and build number
+        id: meta
+        shell: bash
+        run: |
+          V=$(grep '^version:' pubspec.yaml | sed 's/^version: *//' | tr -d '[:space:]')
+          N="${V##*+}"
+          echo "version=$V"                >> "$GITHUB_OUTPUT"
+          echo "nnn=$(printf '%03d' "$N")" >> "$GITHUB_OUTPUT"
+          echo "Building $V (Windows) as build $N"
 
       - name: Set up JDK 21 (for jlink)
         uses: actions/setup-java@v4
@@ -68,3 +85,41 @@ jobs:
           name: Foxlations-windows-x64
           path: Foxlations-windows-x64.zip
           if-no-files-found: error
+
+      # Deliver the zip straight into builds/build-NNN/ on the server (over
+      # Tailscale), the SAME way the iOS runner delivers the IPA — so a release
+      # run gathers all three artifacts in one folder with no manual download.
+      # Gated on the deliver input (set by scripts/release.sh's dispatch); a bare
+      # tag push builds + uploads the artifact but does not ship it home.
+      - name: Tailscale
+        if: inputs.deliver == 'true'
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE }}
+
+      - name: Deliver Windows zip to server
+        if: inputs.deliver == 'true'
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER_NAME: ${{ secrets.SERVER_USER }}
+          BUILDS_PATH: ${{ secrets.SERVER_BUILDS_PATH }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ci
+          else
+            printf '%s' "$SSH_KEY" | tr -d '[:space:]' | base64 -d > ~/.ssh/id_ci
+          fi
+          chmod 600 ~/.ssh/id_ci
+          SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10"
+          DEST="${BUILDS_PATH%/}/build-${{ steps.meta.outputs.nnn }}"
+          # Versioned name so it matches the *-windows-x64.zip glob the publish
+          # scripts look for, alongside the APK/IPA for the same build.
+          ZIP_NAME="foxlations-${{ steps.meta.outputs.version }}-windows-x64.zip"
+          ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
+          scp $SSH_OPTS "$GITHUB_WORKSPACE/Foxlations-windows-x64.zip" \
+              "${USER_NAME}@${HOST}:${DEST}/${ZIP_NAME}"
+          echo "Delivered to ${USER_NAME}@${HOST}:${DEST}/${ZIP_NAME}"

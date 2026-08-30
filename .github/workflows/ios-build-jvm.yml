@@ -300,7 +300,7 @@ jobs:
           fi
           chmod 600 ~/.ssh/id_ci
           SSH_OPTS="-i $HOME/.ssh/id_ci -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=10"
-          DEST="${BUILDS_PATH%/}/build-${{ steps.pkg.outputs.nnn }}-jvm"
+          DEST="${BUILDS_PATH%/}/build-${{ steps.pkg.outputs.nnn }}"
           ssh $SSH_OPTS "${USER_NAME}@${HOST}" "mkdir -p '${DEST}'"
           scp $SSH_OPTS "${{ steps.pkg.outputs.ipa }}" "${USER_NAME}@${HOST}:${DEST}/"
           echo "Delivered to ${USER_NAME}@${HOST}:${DEST}/"
