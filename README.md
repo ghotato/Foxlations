@@ -11,6 +11,8 @@ back up and restore your library, and read behind Cloudflare‑protected sites.
 > Foxlations is a reader only. It does not host any content — you add your own
 > sources.
 
+## Please not that i do school and work full time, i do see your messages and issues! it just might take me a bit to get to them!
+
 ## Download
 
 From the [**Releases**](../../releases) page, or
